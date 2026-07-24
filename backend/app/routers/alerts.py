@@ -16,6 +16,8 @@ class AlertEventRequest(BaseModel):
     confidence: Optional[float] = 0.95
     auto_siren: Optional[bool] = True
 
+from ..models import models
+
 @router.post("/event")
 def receive_alert_event(req: AlertEventRequest, db: Session = Depends(get_db)):
     # Buscar usuario admin maestro para asignar el hilo
@@ -23,12 +25,14 @@ def receive_alert_event(req: AlertEventRequest, db: Session = Depends(get_db)):
     user_id = admin_user.id if admin_user else 1
 
     timestamp_str = datetime.datetime.now().strftime("%H:%M:%S")
-    title = f"🚨 [EVIDENCIA] {req.module_name} ({timestamp_str})"
+    target_title = f"🚨 [EVIDENCIA] {req.module_name}"
     
-    # Crear hilo de evidencia de chat en PostgreSQL
-    thread = crud.create_thread(db, user_id=user_id, title=title)
+    # Reutilizar el hilo existente del módulo "ojos" o crear uno nuevo si fue borrado
+    thread = db.query(models.ChatThread).filter(models.ChatThread.title == target_title).first()
+    if not thread:
+        thread = crud.create_thread(db, user_id=user_id, title=target_title)
     
-    evidence_text = f"⚠️ ALERTA DE EVIDENCIA DESDE MÓDULO JETSON:\n• Dispositivo: {req.module_name}\n• Evento: {req.event}\n• Confianza CV: {int((req.confidence or 0.9)*100)}%"
+    evidence_text = f"⚠️ ALERTA DE EVIDENCIA DESDE MÓDULO JETSON [{timestamp_str}]:\n• Dispositivo: {req.module_name}\n• Evento: {req.event}\n• Confianza CV: {int((req.confidence or 0.9)*100)}%"
     crud.add_message(db, thread.id, role="system", content=evidence_text)
 
     siren_response = None

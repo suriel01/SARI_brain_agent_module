@@ -28,9 +28,13 @@ def _reproducir_alerta(duracion: int):
     """Reproduce la alerta sonora usando spd-say."""
     global _sirena_activa
     with _sirena_lock:
-        if _sirena_activa:
-            return  # Ya hay una sirena activa, no duplicar
         _sirena_activa = True
+
+    try:
+        # Cancelar reproducción previa si la hubiera
+        subprocess.run(["pkill", "-f", "spd-say"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
 
     try:
         mensaje = f"Alerta de seguridad SARI. Intrusión detectada. Sirena activa por {duracion} segundos."

@@ -28,6 +28,7 @@ def execute_physical_tool(tool_name: str, args: dict):
             res = requests.post(f"{SIRENA_SERVICE_URL}/api/alarma/activar", json={"duracion": args.get("duracion_segundos", 30)}, timeout=5.0)
             if res.status_code == 200:
                 HardwareState.siren_active = True
+                HardwareState.alert_count += 1
                 HardwareState.add_log(f"🚨 Sirena física activada por {args.get('duracion_segundos', 30)}s", "ERROR")
                 return {"status": "success", "message": "🚨 Sirena activada."}
             return {"status": "error", "message": f"Servicio sirena falló: {res.status_code}"}

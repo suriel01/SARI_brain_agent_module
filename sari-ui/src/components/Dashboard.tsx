@@ -85,7 +85,7 @@ export default function Dashboard({ token, role, onLogout }: DashboardProps) {
         try { audioCtx.close(); } catch(e){}
       }
     };
-  }, [state?.siren_active]);
+  }, [state?.siren_active, state?.alert_count]);
 
   const requestPin = (actionName: string, callback: (pin: string) => void) => {
     setPendingAction(actionName);
