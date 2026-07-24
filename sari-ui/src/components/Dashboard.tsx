@@ -111,7 +111,7 @@ export default function Dashboard({ token, role, onLogout }: DashboardProps) {
         
         {/* Brand */}
         <div style={{ display: 'flex', alignItems: 'center', padding: '0 1.5rem', gap: '0.8rem', marginBottom: '2rem' }}>
-          <ShieldAlert size={24} color="var(--primary)" />
+          <ShieldAlert size={24} color="#ff3366" />
           <span style={{ fontSize: '1.2rem', fontWeight: 600, color: '#e6edf3' }}>SARI SOC</span>
         </div>
         
@@ -121,14 +121,14 @@ export default function Dashboard({ token, role, onLogout }: DashboardProps) {
           
           <div 
             onClick={() => setActiveTab('chat')}
-            style={{ padding: '0.5rem 1rem', cursor: 'pointer', borderRadius: '6px', backgroundColor: activeTab === 'chat' ? 'var(--primary-glow)' : 'transparent', color: activeTab === 'chat' ? 'var(--primary)' : '#c9d1d9', display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '0.2rem' }}
+            style={{ padding: '0.5rem 1rem', cursor: 'pointer', borderRadius: '6px', backgroundColor: activeTab === 'chat' ? 'rgba(255, 51, 102, 0.15)' : 'transparent', color: activeTab === 'chat' ? '#ff3366' : '#c9d1d9', display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '0.2rem' }}
           >
             <span style={{ fontSize: '0.9rem' }}>Main Terminal</span>
           </div>
 
           <div 
             onClick={() => setActiveTab('hardware')}
-            style={{ padding: '0.5rem 1rem', cursor: 'pointer', borderRadius: '6px', backgroundColor: activeTab === 'hardware' ? 'var(--primary-glow)' : 'transparent', color: activeTab === 'hardware' ? 'var(--primary)' : '#c9d1d9', display: 'flex', alignItems: 'center', gap: '0.8rem' }}
+            style={{ padding: '0.5rem 1rem', cursor: 'pointer', borderRadius: '6px', backgroundColor: activeTab === 'hardware' ? 'rgba(255, 51, 102, 0.15)' : 'transparent', color: activeTab === 'hardware' ? '#ff3366' : '#c9d1d9', display: 'flex', alignItems: 'center', gap: '0.8rem' }}
           >
             <span style={{ fontSize: '0.9rem' }}>Hardware Control</span>
           </div>
@@ -157,11 +157,11 @@ export default function Dashboard({ token, role, onLogout }: DashboardProps) {
         {/* Topbar */}
         <header style={{ height: '60px', display: 'flex', alignItems: 'center', padding: '0 1.5rem', borderBottom: '1px solid #30363d', justifyContent: 'space-between', backgroundColor: '#0d1117' }}>
            <div style={{ fontSize: '0.9rem', color: '#8b949e' }}>
-             SARI SOC <span style={{ margin: '0 0.5rem' }}>›</span> main <span style={{ margin: '0 0.5rem' }}>›</span> <span style={{ color: 'var(--primary)' }}>{activeTab === 'chat' ? 'Chat' : activeTab === 'hardware' ? 'Hardware' : 'Admin'}</span>
+             SARI SOC <span style={{ margin: '0 0.5rem' }}>›</span> main <span style={{ margin: '0 0.5rem' }}>›</span> <span style={{ color: '#ff3366' }}>{activeTab === 'chat' ? 'Chat' : activeTab === 'hardware' ? 'Hardware' : 'Admin'}</span>
            </div>
 
            <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '0.3rem 0.8rem', borderRadius: '20px', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', border: '1px solid #30363d' }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: state?.siren_active ? 'var(--danger)' : '#2ea043' }}></div>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: state?.siren_active ? '#ff3366' : '#2ea043' }}></div>
               <span style={{ color: '#c9d1d9' }}>{state?.siren_active ? 'Siren Active' : 'System Normal'}</span>
            </div>
         </header>
