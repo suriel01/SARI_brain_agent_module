@@ -169,7 +169,7 @@ export default function Dashboard({ token, role, onLogout }: DashboardProps) {
         {/* Content Body */}
         <div style={{ flex: 1, overflow: 'hidden' }}>
           {activeTab === 'chat' ? (
-            <ChatPanel token={token} role={role} requestPin={requestPin} fetchState={fetchState} />
+            <ChatPanel token={token} role={role} requestPin={requestPin} fetchState={fetchState} lastAlertThreadId={state?.last_alert_thread_id} />
           ) : activeTab === 'hardware' ? (
             <HardwarePanel token={token} role={role} requestPin={requestPin} state={state} fetchState={fetchState} />
           ) : (

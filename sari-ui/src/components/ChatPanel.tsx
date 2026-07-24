@@ -6,6 +6,7 @@ interface ChatPanelProps {
   role: string;
   requestPin: (actionName: string, callback: (pin: string) => void) => void;
   fetchState: () => void;
+  lastAlertThreadId?: number | null;
 }
 
 interface Message {
@@ -15,10 +16,16 @@ interface Message {
 
 const API_BASE = 'http://localhost:7000/api';
 
-export default function ChatPanel({ token, role, requestPin, fetchState }: ChatPanelProps) {
+export default function ChatPanel({ token, role, requestPin, fetchState, lastAlertThreadId }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [threads, setThreads] = useState<any[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (lastAlertThreadId) {
+      setActiveThreadId(lastAlertThreadId);
+    }
+  }, [lastAlertThreadId]);
   
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);

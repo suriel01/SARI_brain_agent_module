@@ -6,7 +6,7 @@ import datetime
 
 from ..database import get_db
 from ..crud import crud
-from .hardware import execute_physical_tool
+from .hardware import execute_physical_tool, HardwareState
 
 router = APIRouter()
 
@@ -39,6 +39,8 @@ def receive_alert_event(req: AlertEventRequest, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(thread)
     
+    HardwareState.last_alert_thread_id = thread.id
+
     timestamp_str = datetime.datetime.now().strftime("%H:%M:%S")
     evidence_text = f"⚠️ ALERTA DE EVIDENCIA DESDE MÓDULO JETSON [{timestamp_str}]:\n• Dispositivo: {module_clean}\n• Evento: {req.event}\n• Confianza CV: {int((req.confidence or 0.9)*100)}%"
     crud.add_message(db, thread.id, role="system", content=evidence_text)

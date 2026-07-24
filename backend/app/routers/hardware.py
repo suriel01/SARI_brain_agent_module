@@ -8,10 +8,14 @@ router = APIRouter()
 
 SIRENA_SERVICE_URL = os.environ.get("SIRENA_SERVICE_URL", "http://localhost:5000")
 
+import time
+
 # Global state memory for the UI to poll (since we don't have websockets in this basic HTTP version)
 class HardwareState:
     siren_active = False
     alert_count = 0
+    last_alert_time = 0.0
+    last_alert_thread_id = None
     logs = []
 
     @classmethod
@@ -29,6 +33,7 @@ def execute_physical_tool(tool_name: str, args: dict):
             if res.status_code == 200:
                 HardwareState.siren_active = True
                 HardwareState.alert_count += 1
+                HardwareState.last_alert_time = time.time()
                 HardwareState.add_log(f"🚨 Sirena física activada por {args.get('duracion_segundos', 30)}s", "ERROR")
                 return {"status": "success", "message": "🚨 Sirena activada."}
             return {"status": "error", "message": f"Servicio sirena falló: {res.status_code}"}
@@ -53,9 +58,13 @@ def execute_physical_tool(tool_name: str, args: dict):
 
 @router.get("/state")
 def get_state(current_user: dict = Depends(get_current_user)):
+    if HardwareState.siren_active and (time.time() - HardwareState.last_alert_time > 30):
+        HardwareState.siren_active = False
+
     return {
         "siren_active": HardwareState.siren_active,
         "alert_count": HardwareState.alert_count,
+        "last_alert_thread_id": HardwareState.last_alert_thread_id,
         "logs": HardwareState.logs
     }
 
