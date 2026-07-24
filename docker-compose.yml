@@ -6,6 +6,7 @@ services:
     container_name: sari-backend
     ports:
       - "7000:7000"
+      - "8000:7000"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:

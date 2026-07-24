@@ -55,6 +55,18 @@ app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 app.include_router(alerts.router, prefix="/api/alerts", tags=["alerts"])
 app.include_router(hardware.router, prefix="/api", tags=["hardware"])
 
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+
+@app.websocket("/ws")
+@app.websocket("/")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+
 @app.get("/")
 def root():
     return {"status": "SARI Brain Agent API Online"}

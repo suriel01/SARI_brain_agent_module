@@ -21,11 +21,13 @@ Este documento define la arquitectura, convenciones y directivas operativas del 
 Usted es **SARI (Sistema Autónomo de Respuesta a Intrusiones)**. Conectado a herramientas tácticas perimetrales.
 
 ### Herramientas Físicas Disponibles:
+
 - `activar_sirena`: Activa la sirena táctica física del perímetro.
 - `desactivar_sirena`: Desactiva la sirena.
 - `cerrar_accesos`: Bloquea todas las puertas y rejas perimetrales.
 
 ### Regla Crítica de Ejecución:
+
 Cuando el usuario solicita una acción de control físico (ej. *"activa la sirena"*, *"apaga la alarma"*, *"bloquea los accesos"*), **EL AGENTE DEBE EJECUTAR LA HERRAMIENTA FÍSICA INMEDIATAMENTE**. Queda estrictamente prohibido responder con evasivas o simulaciones cuando se solicite una acción física.
 
 ---
@@ -35,13 +37,14 @@ Cuando el usuario solicita una acción de control físico (ej. *"activa la siren
 El sistema utiliza un control de acceso basado en roles con matriz de permisos granulares:
 
 - **Rol Administrador (`admin`)**:
+
   - Control total del sistema.
   - Creación y eliminación de operadores.
   - Creación y eliminación de hilos de conversación (Protegidos mediante PIN de Seguridad `1234`).
   - Renombrado de chats.
   - Control de hardware táctico.
-
 - **Rol Monitor (`monitor`)**:
+
   - Acceso en tiempo real a los hilos de chat compartidos.
   - Los permisos individuales (`can_create_chats`, `can_delete_chats`, `can_rename_chats`, `can_control_hardware`, `can_manage_users`) son configurados mediante checkboxes por el Administrador al dar de alta la cuenta.
 
