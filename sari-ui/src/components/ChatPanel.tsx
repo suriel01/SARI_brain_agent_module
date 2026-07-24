@@ -234,10 +234,10 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
   };
 
   return (
-    <div style={{ display: 'flex', height: '100%', overflow: 'hidden', backgroundColor: '#0d1117' }}>
+    <div style={{ display: 'flex', height: '100%', overflow: 'hidden', backgroundColor: 'var(--bg-dark)' }}>
       
       {/* Thread Sidebar */}
-      <div style={{ width: '250px', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ width: '250px', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', backgroundColor: 'var(--bg-panel)' }}>
         <div style={{ padding: '1rem', borderBottom: '1px solid var(--border)' }}>
           <button 
             onClick={startNewThread} 
@@ -258,12 +258,14 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
                 cursor: 'pointer',
                 borderRadius: '6px',
                 marginBottom: '0.5rem',
-                backgroundColor: activeThreadId === t.id ? 'var(--primary-glow)' : 'transparent',
+                backgroundColor: activeThreadId === t.id ? 'var(--primary-glow-subtle)' : 'transparent',
                 color: activeThreadId === t.id ? 'var(--primary)' : 'var(--text-muted)',
+                border: `1px solid ${activeThreadId === t.id ? 'var(--border-focus)' : 'transparent'}`,
                 fontSize: '0.85rem',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'space-between'
+                justifyContent: 'space-between',
+                fontWeight: activeThreadId === t.id ? 600 : 400
               }}>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: '0.5rem' }}>
                 {t.title}
@@ -288,32 +290,33 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
       </div>
 
       {/* Main Chat Area */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative', backgroundColor: 'var(--bg-dark)' }}>
         <div ref={chatContainerRef} onScroll={handleScroll} style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           {messages.map((msg, idx) => (
             <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.8rem', alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
               {msg.role !== 'user' && (
-                <div style={{ background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '50%' }}>
+                <div style={{ background: 'var(--primary-glow-subtle)', border: '1px solid var(--border-focus)', padding: '0.5rem', borderRadius: '50%' }}>
                   <Bot size={18} color="var(--primary)" />
                 </div>
               )}
               
               <div style={{
-                background: msg.role === 'user' ? 'linear-gradient(135deg, var(--primary-glow), rgba(16, 185, 129, 0.05))' : 
-                            msg.role === 'system' ? 'rgba(139, 148, 158, 0.15)' : 'rgba(255,255,255,0.03)',
-                border: `1px solid ${msg.role === 'user' ? 'var(--primary-glow)' : msg.role === 'system' ? 'var(--border)' : 'var(--border)'}`,
-                padding: '0.8rem 1.2rem',
+                background: msg.role === 'user' ? 'linear-gradient(135deg, var(--primary-glow-subtle), rgba(118, 185, 0, 0.03))' : 
+                            msg.role === 'system' ? 'var(--bg-card)' : 'rgba(255,255,255,0.02)',
+                border: `1px solid ${msg.role === 'user' ? 'var(--border-focus)' : 'var(--border)'}`,
+                padding: '0.85rem 1.25rem',
                 borderRadius: '12px',
                 borderTopRightRadius: msg.role === 'user' ? 0 : '12px',
                 borderTopLeftRadius: msg.role !== 'user' ? 0 : '12px',
-                color: msg.role === 'system' ? 'var(--text-main)' : 'var(--text-main)',
-                fontSize: '0.95rem'
+                color: 'var(--text-main)',
+                fontSize: '0.95rem',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.3)'
               }}>
                 {msg.content}
               </div>
 
               {msg.role === 'user' && (
-                <div style={{ background: 'var(--primary-glow)', padding: '0.5rem', borderRadius: '50%' }}>
+                <div style={{ background: 'var(--primary-glow-subtle)', border: '1px solid var(--border-focus)', padding: '0.5rem', borderRadius: '50%' }}>
                   <User size={18} color="var(--primary)" />
                 </div>
               )}
@@ -328,18 +331,18 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
         </div>
 
         {/* Input */}
-        <div style={{ padding: '1.5rem', display: 'flex', justifyContent: 'center' }}>
-          <form onSubmit={handleSend} style={{ width: '100%', maxWidth: '800px', display: 'flex', gap: '0.8rem', background: '#161b22', border: '1px solid #30363d', borderRadius: '12px', padding: '0.5rem', alignItems: 'center' }}>
-            <div style={{ padding: '0.5rem', color: '#8b949e', cursor: 'pointer' }}>+</div>
+        <div style={{ padding: '1.5rem', display: 'flex', justifyContent: 'center', backgroundColor: 'var(--bg-dark)' }}>
+          <form onSubmit={handleSend} style={{ width: '100%', maxWidth: '800px', display: 'flex', gap: '0.8rem', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: '12px', padding: '0.6rem 1rem', alignItems: 'center' }}>
+            <div style={{ padding: '0.2rem', color: 'var(--text-muted)', cursor: 'pointer' }}>+</div>
             <input 
               type="text" 
-              style={{ flex: 1, background: 'transparent', border: 'none', color: '#c9d1d9', outline: 'none', fontSize: '0.95rem' }}
+              style={{ flex: 1, background: 'transparent', border: 'none', color: 'var(--text-main)', outline: 'none', fontSize: '0.95rem' }}
               value={input} 
               onChange={e => setInput(e.target.value)}
               placeholder="Conecta al gateway para chatear..."
               disabled={loading}
             />
-            <button type="submit" disabled={loading} style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '0.5rem' }}>
+            <button type="submit" disabled={loading} style={{ background: 'transparent', border: 'none', color: 'var(--primary)', cursor: 'pointer', padding: '0.5rem' }}>
               <Send size={18} />
             </button>
           </form>

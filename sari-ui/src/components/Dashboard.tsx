@@ -104,31 +104,55 @@ export default function Dashboard({ token, role, onLogout }: DashboardProps) {
   };
 
   return (
-    <div className="crt-scanlines" style={{ display: 'flex', height: '100vh', backgroundColor: '#0d1117' }}>
+    <div style={{ display: 'flex', height: '100vh', backgroundColor: 'var(--bg-dark)' }}>
       
       {/* Left Sidebar */}
-      <aside style={{ width: '260px', backgroundColor: '#161b22', borderRight: '1px solid #30363d', display: 'flex', flexDirection: 'column', padding: '1rem 0' }}>
+      <aside style={{ width: '260px', backgroundColor: 'var(--bg-panel)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', padding: '1rem 0' }}>
         
         {/* Brand */}
         <div style={{ display: 'flex', alignItems: 'center', padding: '0 1.5rem', gap: '0.8rem', marginBottom: '2rem' }}>
-          <ShieldAlert size={24} color="#ff3366" />
-          <span style={{ fontSize: '1.2rem', fontWeight: 600, color: '#e6edf3' }}>SARI SOC</span>
+          <ShieldAlert size={24} color="var(--primary)" style={{ filter: 'drop-shadow(0 0 8px var(--primary-glow))' }} />
+          <span style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-main)', letterSpacing: '0.05em' }}>SARI SOC</span>
         </div>
         
         {/* Nav Sections */}
         <div style={{ flex: 1, padding: '0 1rem' }}>
-          <div style={{ fontSize: '0.7rem', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '0.5rem', paddingLeft: '0.5rem' }}>Modules</div>
+          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '0.6rem', paddingLeft: '0.5rem', fontWeight: 600 }}>Modules</div>
           
           <div 
             onClick={() => setActiveTab('chat')}
-            style={{ padding: '0.5rem 1rem', cursor: 'pointer', borderRadius: '6px', backgroundColor: activeTab === 'chat' ? 'rgba(255, 51, 102, 0.15)' : 'transparent', color: activeTab === 'chat' ? '#ff3366' : '#c9d1d9', display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '0.2rem' }}
+            style={{ 
+              padding: '0.65rem 1rem', 
+              cursor: 'pointer', 
+              borderRadius: '6px', 
+              backgroundColor: activeTab === 'chat' ? 'var(--primary-glow-subtle)' : 'transparent', 
+              color: activeTab === 'chat' ? 'var(--primary)' : 'var(--text-muted)', 
+              border: `1px solid ${activeTab === 'chat' ? 'var(--border-focus)' : 'transparent'}`,
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '0.8rem', 
+              marginBottom: '0.3rem',
+              fontWeight: activeTab === 'chat' ? 600 : 400
+            }}
           >
             <span style={{ fontSize: '0.9rem' }}>Main Terminal</span>
           </div>
 
           <div 
             onClick={() => setActiveTab('hardware')}
-            style={{ padding: '0.5rem 1rem', cursor: 'pointer', borderRadius: '6px', backgroundColor: activeTab === 'hardware' ? 'rgba(255, 51, 102, 0.15)' : 'transparent', color: activeTab === 'hardware' ? '#ff3366' : '#c9d1d9', display: 'flex', alignItems: 'center', gap: '0.8rem' }}
+            style={{ 
+              padding: '0.65rem 1rem', 
+              cursor: 'pointer', 
+              borderRadius: '6px', 
+              backgroundColor: activeTab === 'hardware' ? 'var(--primary-glow-subtle)' : 'transparent', 
+              color: activeTab === 'hardware' ? 'var(--primary)' : 'var(--text-muted)', 
+              border: `1px solid ${activeTab === 'hardware' ? 'var(--border-focus)' : 'transparent'}`,
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '0.8rem',
+              marginBottom: '0.3rem',
+              fontWeight: activeTab === 'hardware' ? 600 : 400
+            }}
           >
             <span style={{ fontSize: '0.9rem' }}>Hardware Control</span>
           </div>
@@ -136,7 +160,18 @@ export default function Dashboard({ token, role, onLogout }: DashboardProps) {
           {role === 'admin' && (
             <div 
               onClick={() => setActiveTab('admin')}
-              style={{ marginTop: '0.5rem', padding: '0.5rem 1rem', cursor: 'pointer', borderRadius: '6px', backgroundColor: activeTab === 'admin' ? 'var(--primary-glow)' : 'transparent', color: activeTab === 'admin' ? 'var(--primary)' : '#c9d1d9', display: 'flex', alignItems: 'center', gap: '0.8rem' }}
+              style={{ 
+                padding: '0.65rem 1rem', 
+                cursor: 'pointer', 
+                borderRadius: '6px', 
+                backgroundColor: activeTab === 'admin' ? 'var(--primary-glow-subtle)' : 'transparent', 
+                color: activeTab === 'admin' ? 'var(--primary)' : 'var(--text-muted)', 
+                border: `1px solid ${activeTab === 'admin' ? 'var(--border-focus)' : 'transparent'}`,
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '0.8rem',
+                fontWeight: activeTab === 'admin' ? 600 : 400
+              }}
             >
               <span style={{ fontSize: '0.9rem' }}>User Management</span>
             </div>
@@ -144,8 +179,8 @@ export default function Dashboard({ token, role, onLogout }: DashboardProps) {
         </div>
 
         {/* Bottom actions */}
-        <div style={{ padding: '1rem', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'center' }}>
-           <button onClick={onLogout} style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <div style={{ padding: '1rem', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'center' }}>
+           <button onClick={onLogout} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
              <LogOut size={18} /> <span style={{ fontSize: '0.8rem' }}>Logout [{role}]</span>
            </button>
         </div>
@@ -155,14 +190,14 @@ export default function Dashboard({ token, role, onLogout }: DashboardProps) {
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         
         {/* Topbar */}
-        <header style={{ height: '60px', display: 'flex', alignItems: 'center', padding: '0 1.5rem', borderBottom: '1px solid #30363d', justifyContent: 'space-between', backgroundColor: '#0d1117' }}>
-           <div style={{ fontSize: '0.9rem', color: '#8b949e' }}>
-             SARI SOC <span style={{ margin: '0 0.5rem' }}>›</span> main <span style={{ margin: '0 0.5rem' }}>›</span> <span style={{ color: '#ff3366' }}>{activeTab === 'chat' ? 'Chat' : activeTab === 'hardware' ? 'Hardware' : 'Admin'}</span>
+        <header style={{ height: '60px', display: 'flex', alignItems: 'center', padding: '0 1.5rem', borderBottom: '1px solid var(--border)', justifyContent: 'space-between', backgroundColor: 'var(--bg-panel)' }}>
+           <div style={{ fontSize: '0.88rem', color: 'var(--text-muted)' }}>
+             SARI SOC <span style={{ margin: '0 0.5rem', opacity: 0.5 }}>›</span> main <span style={{ margin: '0 0.5rem', opacity: 0.5 }}>›</span> <span style={{ color: 'var(--primary)', fontWeight: 600 }}>{activeTab === 'chat' ? 'Chat' : activeTab === 'hardware' ? 'Hardware' : 'Admin'}</span>
            </div>
 
-           <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '0.3rem 0.8rem', borderRadius: '20px', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', border: '1px solid #30363d' }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: state?.siren_active ? '#ff3366' : '#2ea043' }}></div>
-              <span style={{ color: '#c9d1d9' }}>{state?.siren_active ? 'Siren Active' : 'System Normal'}</span>
+           <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '0.35rem 0.9rem', borderRadius: '20px', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', border: '1px solid var(--border)' }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: state?.siren_active ? 'var(--danger)' : 'var(--primary)', boxShadow: state?.siren_active ? '0 0 8px var(--danger)' : '0 0 8px var(--primary-glow)' }}></div>
+              <span style={{ color: 'var(--text-main)', fontWeight: 500 }}>{state?.siren_active ? 'Siren Active' : 'System Normal'}</span>
            </div>
         </header>
 
