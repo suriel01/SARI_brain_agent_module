@@ -1,0 +1,16 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install speech-dispatcher for spd-say and audio tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    speech-dispatcher \
+    speech-dispatcher-espeak-ng \
+    alsa-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY sirena_service.py /app/
+
+EXPOSE 5000
+
+CMD ["python3", "sirena_service.py"]

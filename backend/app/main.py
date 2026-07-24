@@ -1,0 +1,60 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from .database import engine, SessionLocal
+from .models import models
+from .schemas import schemas
+from .crud import crud
+from .routers import auth, chat, hardware, users, alerts
+
+from sqlalchemy import text
+
+# Auto-migration de columnas para la tabla users
+with engine.connect() as conn:
+    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_create_chats BOOLEAN DEFAULT FALSE;"))
+    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_delete_chats BOOLEAN DEFAULT FALSE;"))
+    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_rename_chats BOOLEAN DEFAULT FALSE;"))
+    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_control_hardware BOOLEAN DEFAULT FALSE;"))
+    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_manage_users BOOLEAN DEFAULT FALSE;"))
+    conn.commit()
+
+# Crear tablas
+models.Base.metadata.create_all(bind=engine)
+
+app = FastAPI(title="SARI Brain Agent Backend")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Seed Admin User
+@app.on_event("startup")
+def startup_event():
+    db = SessionLocal()
+    try:
+        admin = crud.get_user_by_username(db, "admin")
+        if not admin:
+            admin_user = schemas.UserCreate(
+                username="admin", 
+                password="sari_password", 
+                role="admin", 
+                clearance_level=5
+            )
+            crud.create_user(db, admin_user)
+            print("Admin user created successfully")
+    finally:
+        db.close()
+
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(auth.router, prefix="/api", tags=["auth"])
+app.include_router(users.router, prefix="/api/users", tags=["users"])
+app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
+app.include_router(alerts.router, prefix="/api/alerts", tags=["alerts"])
+app.include_router(hardware.router, prefix="/api", tags=["hardware"])
+
+@app.get("/")
+def root():
+    return {"status": "SARI Brain Agent API Online"}

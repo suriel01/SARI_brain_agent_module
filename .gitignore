@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+*.swp
+
+# Node / React
+node_modules/
+dist/
+.output/
+
+# Docker & Volumes
+pgdata/
+*.log
+
+# IDE & OS
+.DS_Store
+.vscode/
+.idea/

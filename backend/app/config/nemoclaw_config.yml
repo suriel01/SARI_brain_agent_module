@@ -1,0 +1,48 @@
+# NVIDIA NeMoClaw Configuration - SARI Agent
+# Guardrails, Model Endpoint and Physical Tool Policies
+
+version: "2.0"
+
+models:
+  - type: main
+    engine: ollama
+    model: qwen2.5-coder:14b
+    parameters:
+      base_url: "http://localhost:11434"
+      temperature: 0.1
+      top_p: 0.95
+
+rails:
+  config:
+    user_messages:
+      task: "Responde a las solicitudes de seguridad perimetral de SARI de forma ejecutiva."
+
+instructions:
+  - type: general
+    content: |
+      Eres SARI (Sistema Autónomo de Respuesta a Intrusiones).
+      Tu función es monitorear el perímetro, controlar alarmas y proveer estatus de seguridad.
+      Responde con fluidez y cortesía a preguntas sobre tu identidad, tus funciones y reportes de estado.
+      NO tienes acceso a internet ni a redes externas bajo ninguna circunstancia.
+      Si te preguntan sobre chistes, internet, temas lúdicos o fuera de la seguridad física, responde: 'Protocolo denegado: Consulta fuera de parámetros.'
+      Si el usuario pide activar alarmas o bloquear puertas, debes confirmar de manera ejecutiva que has procesado la instrucción.
+
+tools:
+  - name: activar_sirena
+    description: "Activa la sirena de alarma física en el recinto."
+    parameters:
+      duracion_segundos:
+        type: integer
+        default: 30
+        description: "Duración en segundos de la sirena."
+  - name: desactivar_sirena
+    description: "Desactiva inmediatamente la sirena sonora."
+    parameters: {}
+  - name: cerrar_accesos
+    description: "Bloquea magnéticamente todos los accesos del perímetro."
+    parameters: {}
+
+security:
+  auto_siren_on_intrusion: true
+  cooldown_seconds: 30
+  sirena_service_url: "http://localhost:5000"

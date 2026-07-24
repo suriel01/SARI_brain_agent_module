@@ -1,0 +1,31 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python requirements
+RUN pip install --no-cache-dir \
+    fastapi \
+    uvicorn \
+    requests \
+    pyjwt \
+    pydantic \
+    sqlalchemy \
+    psycopg2-binary \
+    passlib \
+    bcrypt
+
+# Copy project files
+COPY backend/app /app/app
+
+EXPOSE 7000
+
+ENV PORT=7000
+ENV OLLAMA_URL=http://host.docker.internal:11434/api/chat
+ENV SIRENA_SERVICE_URL=http://sari-sirena:5000
+
+ENTRYPOINT ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7000"]

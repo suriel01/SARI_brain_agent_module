@@ -1,0 +1,65 @@
+services:
+  sari-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: sari-backend
+    ports:
+      - "7000:7000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - PORT=7000
+      - OLLAMA_URL=http://host.docker.internal:11434/api/chat
+      - OLLAMA_MODEL=qwen2.5-coder:14b
+      - SIRENA_SERVICE_URL=http://sari-sirena:5000
+      - DATABASE_URL=postgresql://sari_user:sari_password@postgres_db:5432/sari_db
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  sari-sirena:
+    build:
+      context: .
+      dockerfile: Dockerfile.sirena
+    container_name: sari-sirena
+    ports:
+      - "5000:5000"
+    devices:
+      - "/dev/snd:/dev/snd"
+    restart: unless-stopped
+
+  sari-ui:
+    build:
+      context: ./sari-ui
+      dockerfile: Dockerfile
+    container_name: sari-ui
+    ports:
+      - "5173:80"
+    restart: unless-stopped
+
+  postgres_db:
+    image: postgres:15-alpine
+    container_name: sari_postgres
+    environment:
+      POSTGRES_USER: sari_user
+      POSTGRES_PASSWORD: sari_password
+      POSTGRES_DB: sari_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sari_user -d sari_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+
+networks:
+  default:
+    name: sari-network
