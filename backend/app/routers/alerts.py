@@ -28,9 +28,16 @@ def receive_alert_event(req: AlertEventRequest, db: Session = Depends(get_db)):
     target_title = f"🚨 [EVIDENCIA] {module_clean}"
     
     # Reutilizar el hilo existente del módulo "ojos" o crear uno nuevo si fue borrado
-    thread = db.query(models.ChatThread).filter(models.ChatThread.title == target_title).first()
+    thread = db.query(models.ChatThread).filter(
+        models.ChatThread.title.ilike(f"%{module_clean}%")
+    ).order_by(models.ChatThread.id.desc()).first()
+
     if not thread:
         thread = crud.create_thread(db, user_id=user_id, title=target_title)
+    else:
+        thread.created_at = datetime.datetime.utcnow()
+        db.commit()
+        db.refresh(thread)
     
     timestamp_str = datetime.datetime.now().strftime("%H:%M:%S")
     evidence_text = f"⚠️ ALERTA DE EVIDENCIA DESDE MÓDULO JETSON [{timestamp_str}]:\n• Dispositivo: {module_clean}\n• Evento: {req.event}\n• Confianza CV: {int((req.confidence or 0.9)*100)}%"

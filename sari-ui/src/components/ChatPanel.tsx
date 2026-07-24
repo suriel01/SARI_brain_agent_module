@@ -22,11 +22,21 @@ export default function ChatPanel({ token, role, requestPin, fetchState }: ChatP
   
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [userIsScrolledUp, setUserIsScrolledUp] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleScroll = () => {
+    if (chatContainerRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
+      const scrolledUp = scrollHeight - scrollTop - clientHeight > 80;
+      setUserIsScrolledUp(scrolledUp);
+    }
+  };
 
   useEffect(() => {
     fetchThreads();
-    const interval = setInterval(fetchThreads, 1500);
+    const interval = setInterval(fetchThreads, 1200);
     return () => clearInterval(interval);
   }, [token]);
 
@@ -35,7 +45,7 @@ export default function ChatPanel({ token, role, requestPin, fetchState }: ChatP
       fetchMessages(activeThreadId);
       const interval = setInterval(() => {
         fetchMessages(activeThreadId);
-      }, 1500);
+      }, 1200);
       return () => clearInterval(interval);
     } else {
       setMessages([{ role: 'system', content: 'SISTEMA SOC ACTIVO. IA TÁCTICA ONLINE. Seleccione o inicie un hilo de conversación.' }]);
@@ -43,7 +53,9 @@ export default function ChatPanel({ token, role, requestPin, fetchState }: ChatP
   }, [activeThreadId]);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!userIsScrolledUp) {
+      endRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages]);
 
   const fetchThreads = async () => {
@@ -53,9 +65,14 @@ export default function ChatPanel({ token, role, requestPin, fetchState }: ChatP
       });
       if (res.ok) {
         const data = await res.json();
-        setThreads(data);
+        setThreads(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(data)) {
+            return prev;
+          }
+          return data;
+        });
+
         if (data.length > 0) {
-          // Si no hay un hilo activo o el hilo activo actual fue eliminado de la BD, auto-seleccionar el último
           setActiveThreadId(prevId => {
             if (!prevId || !data.some((t: any) => t.id === prevId)) {
               return data[data.length - 1].id;
@@ -78,7 +95,12 @@ export default function ChatPanel({ token, role, requestPin, fetchState }: ChatP
       });
       if (res.ok) {
         const data = await res.json();
-        setMessages(data);
+        setMessages(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(data)) {
+            return prev;
+          }
+          return data;
+        });
       }
     } catch (e) {
       console.error(e);
@@ -260,7 +282,7 @@ export default function ChatPanel({ token, role, requestPin, fetchState }: ChatP
 
       {/* Main Chat Area */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
-        <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div ref={chatContainerRef} onScroll={handleScroll} style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           {messages.map((msg, idx) => (
             <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.8rem', alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
               {msg.role !== 'user' && (
