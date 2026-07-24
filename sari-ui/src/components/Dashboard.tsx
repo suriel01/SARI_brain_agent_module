@@ -54,6 +54,9 @@ export default function Dashboard({ token, role, onLogout }: DashboardProps) {
 
     try {
       audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
       osc = audioCtx.createOscillator();
       gain = audioCtx.createGain();
 
