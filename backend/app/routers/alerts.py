@@ -19,6 +19,9 @@ class AlertEventRequest(BaseModel):
 from ..models import models
 
 @router.post("/event")
+@router.post("/event/")
+@router.post("/")
+@router.post("")
 def receive_alert_event(req: AlertEventRequest, db: Session = Depends(get_db)):
     # Buscar usuario admin maestro para asignar el hilo
     admin_user = crud.get_user_by_username(db, "admin")

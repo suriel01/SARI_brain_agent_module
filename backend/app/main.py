@@ -53,6 +53,7 @@ app.include_router(auth.router, prefix="/api", tags=["auth"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 app.include_router(alerts.router, prefix="/api/alerts", tags=["alerts"])
+app.include_router(alerts.router, prefix="/api/alert", tags=["alerts"])
 app.include_router(hardware.router, prefix="/api", tags=["hardware"])
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
