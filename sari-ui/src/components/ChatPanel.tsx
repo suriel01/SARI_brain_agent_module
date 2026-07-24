@@ -26,11 +26,17 @@ export default function ChatPanel({ token, role, requestPin, fetchState }: ChatP
 
   useEffect(() => {
     fetchThreads();
+    const interval = setInterval(fetchThreads, 1500);
+    return () => clearInterval(interval);
   }, [token]);
 
   useEffect(() => {
     if (activeThreadId) {
       fetchMessages(activeThreadId);
+      const interval = setInterval(() => {
+        fetchMessages(activeThreadId);
+      }, 1500);
+      return () => clearInterval(interval);
     } else {
       setMessages([{ role: 'system', content: 'SISTEMA SOC ACTIVO. IA TÁCTICA ONLINE. Seleccione o inicie un hilo de conversación.' }]);
     }
@@ -48,8 +54,16 @@ export default function ChatPanel({ token, role, requestPin, fetchState }: ChatP
       if (res.ok) {
         const data = await res.json();
         setThreads(data);
-        if (data.length > 0 && !activeThreadId) {
-          setActiveThreadId(data[data.length - 1].id);
+        if (data.length > 0) {
+          // Si no hay un hilo activo o el hilo activo actual fue eliminado de la BD, auto-seleccionar el último
+          setActiveThreadId(prevId => {
+            if (!prevId || !data.some((t: any) => t.id === prevId)) {
+              return data[data.length - 1].id;
+            }
+            return prevId;
+          });
+        } else {
+          setActiveThreadId(null);
         }
       }
     } catch (e) {

@@ -24,15 +24,16 @@ def receive_alert_event(req: AlertEventRequest, db: Session = Depends(get_db)):
     admin_user = crud.get_user_by_username(db, "admin")
     user_id = admin_user.id if admin_user else 1
 
-    timestamp_str = datetime.datetime.now().strftime("%H:%M:%S")
-    target_title = f"🚨 [EVIDENCIA] {req.module_name}"
+    module_clean = (req.module_name or "Jetson-CV-Node").strip()
+    target_title = f"🚨 [EVIDENCIA] {module_clean}"
     
     # Reutilizar el hilo existente del módulo "ojos" o crear uno nuevo si fue borrado
     thread = db.query(models.ChatThread).filter(models.ChatThread.title == target_title).first()
     if not thread:
         thread = crud.create_thread(db, user_id=user_id, title=target_title)
     
-    evidence_text = f"⚠️ ALERTA DE EVIDENCIA DESDE MÓDULO JETSON [{timestamp_str}]:\n• Dispositivo: {req.module_name}\n• Evento: {req.event}\n• Confianza CV: {int((req.confidence or 0.9)*100)}%"
+    timestamp_str = datetime.datetime.now().strftime("%H:%M:%S")
+    evidence_text = f"⚠️ ALERTA DE EVIDENCIA DESDE MÓDULO JETSON [{timestamp_str}]:\n• Dispositivo: {module_clean}\n• Evento: {req.event}\n• Confianza CV: {int((req.confidence or 0.9)*100)}%"
     crud.add_message(db, thread.id, role="system", content=evidence_text)
 
     siren_response = None
