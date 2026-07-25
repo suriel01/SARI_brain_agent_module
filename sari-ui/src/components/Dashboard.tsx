@@ -150,10 +150,10 @@ export default function Dashboard({ token, role, onLogout }: DashboardProps) {
              style={{ 
                width: '100%', 
                padding: '0.65rem 1rem', 
-               background: 'rgba(239, 68, 68, 0.1)', 
-               border: '1px solid rgba(239, 68, 68, 0.3)', 
+               background: 'rgba(255, 51, 102, 0.12)', 
+               border: '1px solid rgba(255, 51, 102, 0.35)', 
                borderRadius: '8px', 
-               color: '#f87171', 
+               color: '#ff3366', 
                cursor: 'pointer', 
                display: 'flex', 
                alignItems: 'center', 
@@ -162,16 +162,16 @@ export default function Dashboard({ token, role, onLogout }: DashboardProps) {
                fontSize: '0.85rem',
                fontWeight: 600,
                transition: 'all 0.2s ease',
-               boxShadow: '0 2px 8px rgba(239, 68, 68, 0.15)'
+               boxShadow: '0 2px 10px rgba(255, 51, 102, 0.15)'
              }}
              onMouseEnter={(e) => {
-               e.currentTarget.style.background = 'rgba(239, 68, 68, 0.22)';
-               e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.6)';
+               e.currentTarget.style.background = 'rgba(255, 51, 102, 0.25)';
+               e.currentTarget.style.borderColor = 'rgba(255, 51, 102, 0.7)';
                e.currentTarget.style.transform = 'translateY(-1px)';
              }}
              onMouseLeave={(e) => {
-               e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
-               e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+               e.currentTarget.style.background = 'rgba(255, 51, 102, 0.12)';
+               e.currentTarget.style.borderColor = 'rgba(255, 51, 102, 0.35)';
                e.currentTarget.style.transform = 'none';
              }}
            >

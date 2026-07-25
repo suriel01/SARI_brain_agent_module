@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, MessageSquarePlus, Edit2, Trash2 } from 'lucide-react';
+import { Send, Bot, User, MessageSquarePlus, Edit2, Trash2, Cpu } from 'lucide-react';
 
 interface ChatPanelProps {
   token: string;
@@ -385,7 +385,32 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
 
         {/* Input */}
         <div style={{ padding: '1.5rem', display: 'flex', justifyContent: 'center' }}>
-          <form onSubmit={handleSend} style={{ width: '100%', maxWidth: '800px', display: 'flex', gap: '0.8rem', background: '#161b22', border: '1px solid #30363d', borderRadius: '12px', padding: '0.5rem 1rem', alignItems: 'center' }}>
+          <form onSubmit={handleSend} style={{ width: '100%', maxWidth: '850px', display: 'flex', gap: '0.8rem', background: '#161b22', border: '1px solid #30363d', borderRadius: '12px', padding: '0.5rem 0.8rem', alignItems: 'center' }}>
+            
+            {/* LLM Status & Model Badge */}
+            <div 
+              title="LLM Status: Online (Ollama qwen2.5-coder:14b)"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                background: 'rgba(255, 51, 102, 0.1)',
+                border: '1px solid rgba(255, 51, 102, 0.3)',
+                padding: '0.35rem 0.75rem',
+                borderRadius: '8px',
+                fontSize: '0.78rem',
+                color: '#ff3366',
+                fontWeight: 600,
+                whiteSpace: 'nowrap',
+                cursor: 'default',
+                userSelect: 'none'
+              }}
+            >
+              <Cpu size={14} color="#ff3366" />
+              <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#2ea043', boxShadow: '0 0 6px #2ea043' }} />
+              <span>Qwen 2.5 14B</span>
+            </div>
+
             <input 
               ref={inputRef}
               type="text" 
