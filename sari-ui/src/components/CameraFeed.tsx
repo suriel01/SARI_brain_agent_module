@@ -1,20 +1,96 @@
-import { useState, useEffect } from 'react';
-import { Eye, Crosshair } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Crosshair } from 'lucide-react';
 
 export default function CameraFeed() {
   const [fps, setFps] = useState(30);
   const [confidence, setConfidence] = useState(99.4);
-  const [bboxPos, setBboxPos] = useState({ top: '35%', left: '42%' });
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const activeCam = 'Jetson-PTZ_1';
+
+  // Animated CCTV video simulation on HTML5 Canvas
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let animationFrameId: number;
+    let x = 120;
+    let y = 80;
+    let dx = 1.2;
+    let dy = 0.8;
+
+    const render = () => {
+      // Clear with dark surveillance background
+      ctx.fillStyle = '#060a0f';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Draw subtle grid lines
+      ctx.strokeStyle = 'rgba(255, 51, 102, 0.08)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < canvas.width; i += 30) {
+        ctx.beginPath();
+        ctx.moveTo(i, 0);
+        ctx.lineTo(i, canvas.height);
+        ctx.stroke();
+      }
+      for (let j = 0; j < canvas.height; j += 30) {
+        ctx.beginPath();
+        ctx.moveTo(0, j);
+        ctx.lineTo(canvas.width, j);
+        ctx.stroke();
+      }
+
+      // Move target
+      x += dx;
+      y += dy;
+      if (x < 60 || x > canvas.width - 120) dx = -dx;
+      if (y < 40 || y > canvas.height - 100) dy = -dy;
+
+      // Draw simulated intruder figure (silueta táctica)
+      ctx.fillStyle = 'rgba(255, 51, 102, 0.25)';
+      ctx.beginPath();
+      ctx.arc(x + 35, y + 20, 12, 0, Math.PI * 2); // Head
+      ctx.fill();
+      ctx.fillRect(x + 23, y + 34, 24, 40); // Body
+
+      // Draw YOLO Bounding Box around target
+      ctx.strokeStyle = '#ff3366';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.strokeRect(x, y, 70, 85);
+      ctx.setLineDash([]);
+
+      // Bounding Box Badge Label
+      ctx.fillStyle = '#ff3366';
+      ctx.fillRect(x, y - 18, 70, 18);
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 9px monospace';
+      ctx.fillText(`INTRUDER ${confidence}%`, x + 3, y - 5);
+
+      // Noise static effect
+      for (let k = 0; k < 60; k++) {
+        const nx = Math.random() * canvas.width;
+        const ny = Math.random() * canvas.height;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+        ctx.fillRect(nx, ny, 1.5, 1.5);
+      }
+
+      animationFrameId = requestAnimationFrame(render);
+    };
+
+    render();
+
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, [confidence]);
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setFps(Math.floor(28 + Math.random() * 5));
-      setConfidence(parseFloat((98.5 + Math.random() * 1.4).toFixed(1)));
-      const topVal = 35 + (Math.random() * 4 - 2);
-      const leftVal = 42 + (Math.random() * 4 - 2);
-      setBboxPos({ top: `${topVal}%`, left: `${leftVal}%` });
-    }, 1200);
+      setFps(Math.floor(29 + Math.random() * 3));
+      setConfidence(parseFloat((98.7 + Math.random() * 1.2).toFixed(1)));
+    }, 1500);
     return () => clearInterval(interval);
   }, []);
 
@@ -24,77 +100,49 @@ export default function CameraFeed() {
       {/* Feed Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#161b22', padding: '0.6rem 1rem', borderRadius: '8px', border: '1px solid #30363d' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-          <Eye size={16} color="#ff3366" />
-          <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#e6edf3' }}>Live Perception Feed ({activeCam})</span>
+          <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#e6edf3' }}>Live Perception ({activeCam})</span>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           <span style={{ fontSize: '0.75rem', background: 'rgba(255, 51, 102, 0.15)', border: '1px solid rgba(255, 51, 102, 0.3)', padding: '0.2rem 0.5rem', borderRadius: '4px', color: '#ff3366', fontWeight: 600 }}>
-            YOLOv8 Active
+            YOLOv8 Active Stream
           </span>
           <span style={{ fontSize: '0.75rem', color: '#8b949e' }}>{fps} FPS</span>
         </div>
       </div>
 
-      {/* Main Video Viewport simulation */}
+      {/* Main Animated Surveillance Canvas Viewport */}
       <div style={{ 
         position: 'relative', 
         width: '100%', 
-        height: '280px', 
+        height: '340px', 
         backgroundColor: '#04060a', 
         borderRadius: '10px', 
         overflow: 'hidden', 
-        border: '1px solid #30363d',
-        backgroundImage: 'radial-gradient(circle at 50% 50%, rgba(255, 51, 102, 0.05) 0%, transparent 80%)'
+        border: '1px solid #30363d'
       }}>
         
-        {/* Synthetic Camera View grid */}
-        <div style={{
-          position: 'absolute',
-          inset: 0,
-          backgroundImage: 'linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)',
-          backgroundSize: '20px 20px'
-        }} />
+        <canvas 
+          ref={canvasRef} 
+          width={700} 
+          height={340} 
+          style={{ width: '100%', height: '100%', display: 'block' }}
+        />
 
         {/* HUD Crosshair Center */}
-        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0.3 }}>
-          <Crosshair size={40} color="#ff3366" />
-        </div>
-
-        {/* Simulated Object Detection Bounding Box */}
-        <div style={{
-          position: 'absolute',
-          top: bboxPos.top,
-          left: bboxPos.left,
-          width: '120px',
-          height: '120px',
-          border: '2px dashed #ff3366',
-          boxShadow: '0 0 12px rgba(255, 51, 102, 0.4)',
-          borderRadius: '4px',
-          transition: 'all 0.8s ease',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
-          padding: '4px'
-        }}>
-          <div style={{ background: '#ff3366', color: '#000', fontSize: '0.65rem', fontWeight: 700, padding: '2px 4px', borderRadius: '2px', display: 'flex', justifyContent: 'space-between' }}>
-            <span>INTRUDER</span>
-            <span>{confidence}%</span>
-          </div>
-          <div style={{ fontSize: '0.6rem', color: '#ff3366', fontWeight: 600, background: 'rgba(0,0,0,0.7)', padding: '2px 4px', borderRadius: '2px' }}>
-            OBJ_ID #804
-          </div>
+        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0.3, pointerEvents: 'none' }}>
+          <Crosshair size={44} color="#ff3366" />
         </div>
 
         {/* HUD Top Info */}
-        <div style={{ position: 'absolute', top: '10px', left: '10px', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+        <div style={{ position: 'absolute', top: '12px', left: '12px', display: 'flex', gap: '0.5rem', alignItems: 'center', pointerEvents: 'none' }}>
           <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#ff3366', animation: 'pulse 1s infinite' }} />
-          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#ff3366', letterSpacing: '1px' }}>REC</span>
+          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#ff3366', letterSpacing: '1px' }}>LIVE STREAM</span>
           <span style={{ fontSize: '0.75rem', color: '#8b949e', marginLeft: '0.5rem' }}>1080p @ {fps}FPS</span>
         </div>
 
         {/* HUD Bottom Info */}
-        <div style={{ position: 'absolute', bottom: '10px', right: '10px', fontSize: '0.7rem', color: '#8b949e', fontFamily: 'monospace' }}>
-          CAM_IP: 192.168.1.104 | RTSP OK
+        <div style={{ position: 'absolute', bottom: '10px', right: '12px', fontSize: '0.7rem', color: '#8b949e', fontFamily: 'monospace', pointerEvents: 'none' }}>
+          STREAM: Jetson-PTZ_1 | RTSP 192.168.1.104 OK
         </div>
       </div>
     </div>

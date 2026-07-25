@@ -62,6 +62,8 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
   const [userIsScrolledUp, setUserIsScrolledUp] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const scrollPositionsRef = useRef<Record<number, number>>({});
+  const isSwitchingThreadRef = useRef(false);
 
   useEffect(() => {
     if (!loading) {
@@ -70,10 +72,11 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
   }, [loading]);
 
   const handleScroll = () => {
-    if (chatContainerRef.current) {
+    if (chatContainerRef.current && activeThreadId && !isSwitchingThreadRef.current) {
       const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
       const scrolledUp = scrollHeight - scrollTop - clientHeight > 80;
       setUserIsScrolledUp(scrolledUp);
+      scrollPositionsRef.current[activeThreadId] = scrollTop;
     }
   };
 
@@ -85,7 +88,24 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
 
   useEffect(() => {
     if (activeThreadId) {
-      fetchMessages(activeThreadId);
+      isSwitchingThreadRef.current = true;
+      fetchMessages(activeThreadId).then(() => {
+        setTimeout(() => {
+          if (chatContainerRef.current) {
+            const savedPos = scrollPositionsRef.current[activeThreadId];
+            if (savedPos !== undefined) {
+              chatContainerRef.current.scrollTop = savedPos;
+              const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
+              setUserIsScrolledUp(scrollHeight - scrollTop - clientHeight > 80);
+            } else {
+              chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+              setUserIsScrolledUp(false);
+            }
+          }
+          isSwitchingThreadRef.current = false;
+        }, 50);
+      });
+
       const interval = setInterval(() => {
         fetchMessages(activeThreadId);
       }, 1500);
@@ -96,7 +116,7 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
   }, [activeThreadId]);
 
   useEffect(() => {
-    if (!userIsScrolledUp) {
+    if (!userIsScrolledUp && !isSwitchingThreadRef.current) {
       endRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages]);
@@ -345,7 +365,20 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
 
       {/* Main Chat Area */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
-        <div ref={chatContainerRef} onScroll={handleScroll} style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div 
+          ref={chatContainerRef} 
+          onScroll={handleScroll} 
+          style={{ 
+            flex: 1, 
+            overflowY: 'auto', 
+            padding: '1.5rem', 
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: '1rem',
+            WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 5%, black 95%, transparent 100%)',
+            maskImage: 'linear-gradient(to bottom, transparent 0%, black 5%, black 95%, transparent 100%)'
+          }}
+        >
           {messages.map((msg, idx) => (
             <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.8rem', alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
               {msg.role !== 'user' && (
@@ -383,50 +416,52 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
           <div ref={endRef} />
         </div>
 
-        {/* Input & LLM Status Bar */}
-        <div style={{ padding: '1rem 1.5rem 1.5rem 1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
-          
-          <div style={{ width: '100%', maxWidth: '850px', display: 'flex', justifyContent: 'flex-start', alignItems: 'center' }}>
-            {/* LLM Status & Model Badge (Outside Chat Box) */}
+        {/* Input & LLM Status Bar (LLM Badge to the Left of Chat Input Box) */}
+        <div style={{ padding: '1.2rem 1.5rem', display: 'flex', justifyContent: 'center' }}>
+          <div style={{ width: '100%', maxWidth: '900px', display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+            
+            {/* LLM Status Badge (On the left side of chat input) */}
             <div 
               title="LLM Status: Online (Ollama qwen2.5-coder:14b)"
               style={{
-                display: 'inline-flex',
+                display: 'flex',
                 alignItems: 'center',
                 gap: '0.45rem',
-                background: 'rgba(255, 51, 102, 0.08)',
-                border: '1px solid rgba(255, 51, 102, 0.25)',
-                padding: '0.3rem 0.7rem',
-                borderRadius: '6px',
-                fontSize: '0.75rem',
+                background: 'rgba(255, 51, 102, 0.1)',
+                border: '1px solid rgba(255, 51, 102, 0.3)',
+                padding: '0.6rem 0.85rem',
+                borderRadius: '12px',
+                fontSize: '0.78rem',
                 color: '#ff3366',
                 fontWeight: 600,
                 whiteSpace: 'nowrap',
                 cursor: 'default',
-                userSelect: 'none'
+                userSelect: 'none',
+                height: '46px'
               }}
             >
-              <Cpu size={14} color="#ff3366" />
+              <Cpu size={15} color="#ff3366" />
               <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#2ea043', boxShadow: '0 0 6px #2ea043' }} />
-              <span>LLM: Qwen 2.5 14B (Online)</span>
+              <span>LLM: Qwen 2.5 14B</span>
             </div>
-          </div>
 
-          <form onSubmit={handleSend} style={{ width: '100%', maxWidth: '850px', display: 'flex', gap: '0.8rem', background: '#161b22', border: '1px solid #30363d', borderRadius: '12px', padding: '0.5rem 1rem', alignItems: 'center' }}>
-            <input 
-              ref={inputRef}
-              type="text" 
-              style={{ flex: 1, background: 'transparent', border: 'none', color: '#c9d1d9', outline: 'none', fontSize: '0.95rem' }}
-              value={input} 
-              onChange={e => setInput(e.target.value)}
-              placeholder="chat with agent..."
-              disabled={loading}
-              autoFocus
-            />
-            <button type="submit" disabled={loading} style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '0.5rem' }}>
-              <Send size={18} />
-            </button>
-          </form>
+            {/* Chat Input Form */}
+            <form onSubmit={handleSend} style={{ flex: 1, display: 'flex', gap: '0.8rem', background: '#161b22', border: '1px solid #30363d', borderRadius: '12px', padding: '0.5rem 1rem', alignItems: 'center', height: '46px' }}>
+              <input 
+                ref={inputRef}
+                type="text" 
+                style={{ flex: 1, background: 'transparent', border: 'none', color: '#c9d1d9', outline: 'none', fontSize: '0.95rem' }}
+                value={input} 
+                onChange={e => setInput(e.target.value)}
+                placeholder="chat with agent..."
+                disabled={loading}
+                autoFocus
+              />
+              <button type="submit" disabled={loading} style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '0.5rem' }}>
+                <Send size={18} />
+              </button>
+            </form>
+          </div>
         </div>
       </div>
     </div>

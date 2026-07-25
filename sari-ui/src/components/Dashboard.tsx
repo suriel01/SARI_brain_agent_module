@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogOut, ShieldAlert, Eye, BellRing, Lock } from 'lucide-react';
+import { LogOut, ShieldAlert, BellRing, Lock } from 'lucide-react';
 import ChatPanel from './ChatPanel';
 import HardwarePanel from './HardwarePanel';
 import AdminPanel from './AdminPanel';
@@ -102,8 +102,7 @@ export default function Dashboard({ token, role, onLogout }: DashboardProps) {
             onClick={() => setActiveTab('perception')}
             style={{ padding: '0.55rem 1rem', cursor: 'pointer', borderRadius: '6px', backgroundColor: activeTab === 'perception' ? 'rgba(255, 51, 102, 0.15)' : 'transparent', color: activeTab === 'perception' ? '#ff3366' : '#c9d1d9', display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '0.2rem' }}
           >
-            <Eye size={16} />
-            <span style={{ fontSize: '0.9rem' }}>Live Perception (OJOS)</span>
+            <span style={{ fontSize: '0.9rem' }}>Live Perception</span>
           </div>
 
           <div 
@@ -166,7 +165,7 @@ export default function Dashboard({ token, role, onLogout }: DashboardProps) {
         {/* Topbar with 1-Click Emergency Toolbar */}
         <header style={{ height: '60px', display: 'flex', alignItems: 'center', padding: '0 1.5rem', borderBottom: '1px solid #30363d', justifyContent: 'space-between', backgroundColor: '#0d1117' }}>
            <div style={{ fontSize: '1rem', fontWeight: 600, color: '#ff3366', letterSpacing: '0.02em' }}>
-             {activeTab === 'chat' ? 'Chat' : activeTab === 'perception' ? 'Live Perception (OJOS)' : activeTab === 'hardware' ? 'Hardware Control' : 'User Management'}
+             {activeTab === 'chat' ? 'Chat' : activeTab === 'perception' ? 'Live Perception' : activeTab === 'hardware' ? 'Hardware Control' : 'User Management'}
            </div>
 
            {/* Emergency 1-Click Action Buttons */}
