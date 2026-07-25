@@ -3,7 +3,7 @@ import { Crosshair } from 'lucide-react';
 
 export default function CameraFeed() {
   const [fps, setFps] = useState(30);
-  const [streamUrl, setStreamUrl] = useState('http://localhost:8080/video_feed');
+  const [streamUrl, setStreamUrl] = useState('http://192.168.55.1:8080/video_feed');
   const [streamError, setStreamError] = useState(false);
   const activeCam = 'Jetson-PTZ_1';
 
