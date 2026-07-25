@@ -33,14 +33,33 @@ export default function CameraFeed() {
 
       {/* Stream Source URL Bar */}
       <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', backgroundColor: '#161b22', padding: '0.5rem 0.8rem', borderRadius: '6px', border: '1px solid #30363d' }}>
-        <span style={{ fontSize: '0.78rem', color: '#8b949e', fontWeight: 500 }}>URL Stream HTTP/MJPEG (Jetson):</span>
+        <span style={{ fontSize: '0.78rem', color: '#8b949e', fontWeight: 500 }}>URL Stream Jetson:</span>
         <input 
           type="text" 
           value={streamUrl} 
           onChange={e => { setStreamUrl(e.target.value); setStreamError(false); }}
           style={{ flex: 1, background: '#0d1117', border: '1px solid #30363d', color: '#c9d1d9', padding: '0.3rem 0.6rem', borderRadius: '4px', fontSize: '0.8rem', outline: 'none' }}
-          placeholder="http://192.168.1.200:8080/video_feed"
+          placeholder="http://192.168.1.73:8080/mjpeg"
         />
+        <div style={{ display: 'flex', gap: '0.3rem' }}>
+          {['http://192.168.1.73:8080/mjpeg', 'http://192.168.1.73:8080/video_feed', 'http://192.168.55.1:8080/mjpeg'].map((preset, i) => (
+            <button
+              key={i}
+              onClick={() => { setStreamUrl(preset); setStreamError(false); }}
+              style={{
+                background: streamUrl === preset ? 'rgba(255, 51, 102, 0.2)' : 'rgba(255, 255, 255, 0.04)',
+                border: `1px solid ${streamUrl === preset ? '#ff3366' : '#30363d'}`,
+                color: streamUrl === preset ? '#ff3366' : '#8b949e',
+                padding: '0.25rem 0.5rem',
+                borderRadius: '4px',
+                fontSize: '0.7rem',
+                cursor: 'pointer'
+              }}
+            >
+              {preset.split('/').pop()}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Main Video Viewport */}
