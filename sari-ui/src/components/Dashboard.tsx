@@ -144,9 +144,38 @@ export default function Dashboard({ token, role, onLogout }: DashboardProps) {
         </div>
 
         {/* Bottom actions */}
-        <div style={{ padding: '1rem', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'center' }}>
-           <button onClick={onLogout} style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-             <LogOut size={18} /> <span style={{ fontSize: '0.8rem' }}>Logout [{role}]</span>
+        <div style={{ padding: '1rem', borderTop: '1px solid #30363d' }}>
+           <button 
+             onClick={onLogout} 
+             style={{ 
+               width: '100%', 
+               padding: '0.65rem 1rem', 
+               background: 'rgba(239, 68, 68, 0.1)', 
+               border: '1px solid rgba(239, 68, 68, 0.3)', 
+               borderRadius: '8px', 
+               color: '#f87171', 
+               cursor: 'pointer', 
+               display: 'flex', 
+               alignItems: 'center', 
+               justifyContent: 'center', 
+               gap: '0.6rem',
+               fontSize: '0.85rem',
+               fontWeight: 600,
+               transition: 'all 0.2s ease',
+               boxShadow: '0 2px 8px rgba(239, 68, 68, 0.15)'
+             }}
+             onMouseEnter={(e) => {
+               e.currentTarget.style.background = 'rgba(239, 68, 68, 0.22)';
+               e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.6)';
+               e.currentTarget.style.transform = 'translateY(-1px)';
+             }}
+             onMouseLeave={(e) => {
+               e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
+               e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+               e.currentTarget.style.transform = 'none';
+             }}
+           >
+             <LogOut size={16} /> <span>Logout [{role}]</span>
            </button>
         </div>
       </aside>
@@ -156,8 +185,8 @@ export default function Dashboard({ token, role, onLogout }: DashboardProps) {
         
         {/* Topbar */}
         <header style={{ height: '60px', display: 'flex', alignItems: 'center', padding: '0 1.5rem', borderBottom: '1px solid #30363d', justifyContent: 'space-between', backgroundColor: '#0d1117' }}>
-           <div style={{ fontSize: '0.9rem', color: '#8b949e' }}>
-             SARI AGENT <span style={{ margin: '0 0.5rem' }}>›</span> main <span style={{ margin: '0 0.5rem' }}>›</span> <span style={{ color: '#ff3366' }}>{activeTab === 'chat' ? 'Chat' : activeTab === 'hardware' ? 'Hardware' : 'Admin'}</span>
+           <div style={{ fontSize: '1rem', fontWeight: 600, color: '#ff3366', letterSpacing: '0.02em' }}>
+             {activeTab === 'chat' ? 'Chat' : activeTab === 'hardware' ? 'Hardware Control' : 'User Management'}
            </div>
 
            <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '0.3rem 0.8rem', borderRadius: '20px', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', border: '1px solid #30363d' }}>

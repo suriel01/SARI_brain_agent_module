@@ -392,7 +392,7 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
               style={{ flex: 1, background: 'transparent', border: 'none', color: '#c9d1d9', outline: 'none', fontSize: '0.95rem' }}
               value={input} 
               onChange={e => setInput(e.target.value)}
-              placeholder="chat agent"
+              placeholder="chat with agent..."
               disabled={loading}
               autoFocus
             />
