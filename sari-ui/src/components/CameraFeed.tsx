@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { Crosshair } from 'lucide-react';
 
 export default function CameraFeed() {
   const [fps, setFps] = useState(30);
@@ -93,11 +92,6 @@ export default function CameraFeed() {
             </div>
           </div>
         )}
-
-        {/* HUD Overlay Crosshair */}
-        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: 0.25, pointerEvents: 'none' }}>
-          <Crosshair size={48} color="#ff3366" />
-        </div>
 
         {/* HUD Top Info */}
         <div style={{ position: 'absolute', top: '12px', left: '12px', display: 'flex', gap: '0.5rem', alignItems: 'center', pointerEvents: 'none' }}>
