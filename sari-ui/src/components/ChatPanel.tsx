@@ -27,11 +27,47 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
     }
   }, [lastAlertThreadId]);
   
+  const [sidebarWidth, setSidebarWidth] = useState(250);
+  const [isResizing, setIsResizing] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const startResizing = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing) return;
+      const newWidth = Math.max(160, Math.min(500, e.clientX - 260));
+      setSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    if (isResizing) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
+
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [userIsScrolledUp, setUserIsScrolledUp] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!loading) {
+      inputRef.current?.focus();
+    }
+  }, [loading]);
 
   const handleScroll = () => {
     if (chatContainerRef.current) {
@@ -43,7 +79,7 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
 
   useEffect(() => {
     fetchThreads();
-    const interval = setInterval(fetchThreads, 1200);
+    const interval = setInterval(fetchThreads, 1500);
     return () => clearInterval(interval);
   }, [token]);
 
@@ -52,7 +88,7 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
       fetchMessages(activeThreadId);
       const interval = setInterval(() => {
         fetchMessages(activeThreadId);
-      }, 1200);
+      }, 1500);
       return () => clearInterval(interval);
     } else {
       setMessages([{ role: 'system', content: 'SISTEMA SOC ACTIVO. IA TÁCTICA ONLINE. Seleccione o inicie un hilo de conversación.' }]);
@@ -128,11 +164,11 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
           body: JSON.stringify({ title: 'Nuevo Hilo Compartido', pin })
         });
         if (res.ok) {
-          const newThread = await res.json();
-          await fetchThreads();
-          setActiveThreadId(newThread.id);
+          const data = await res.json();
+          fetchThreads();
+          setActiveThreadId(data.id);
         } else {
-          alert('PIN incorrecto o permiso denegado.');
+          alert('PIN incorrecto o error al crear hilo.');
         }
       } catch (err) {
         console.error(err);
@@ -140,30 +176,38 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
     });
   };
 
-  const sendToBackend = async (text: string, pin?: string) => {
-    if (!activeThreadId && role !== 'admin') {
-      alert('Seleccione un hilo existente para participar.');
-      return;
-    }
-
+  const sendToBackend = async (userPrompt: string) => {
     setLoading(true);
     try {
-      const payload: any = { message: text };
-      if (activeThreadId) payload.thread_id = activeThreadId;
-      if (pin) payload.pin = pin;
+      let currentId = activeThreadId;
 
-      const res = await fetch(`${API_BASE}/chat`, {
+      if (!currentId) {
+        const createRes = await fetch(`${API_BASE}/chat/threads`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ title: userPrompt.slice(0, 25) + '...' })
+        });
+        if (createRes.ok) {
+          const newThread = await createRes.json();
+          currentId = newThread.id;
+          setActiveThreadId(currentId);
+          fetchThreads();
+        } else {
+          setMessages(prev => [...prev, { role: 'system', content: 'No se pudo crear un nuevo hilo automáticamente.' }]);
+          setLoading(false);
+          return;
+        }
+      }
+
+      const res = await fetch(`${API_BASE}/chat/threads/${currentId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ prompt: userPrompt })
       });
-      
+
       if (res.ok) {
-        if (!activeThreadId) {
-          await fetchThreads();
-        } else {
-          fetchMessages(activeThreadId);
-        }
+        const data = await res.json();
+        setMessages(prev => [...prev, { role: 'agent', content: data.response }]);
         fetchState();
       } else {
         const errData = await res.json();
@@ -173,6 +217,9 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
       setMessages(prev => [...prev, { role: 'system', content: 'Error de conexión con el agente.' }]);
     } finally {
       setLoading(false);
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 50);
     }
   };
 
@@ -184,7 +231,15 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
     setInput('');
     setMessages(prev => [...prev, { role: 'user', content: text }]);
     
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0);
+
     await sendToBackend(text);
+
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 50);
   };
 
   const handleRenameThread = async (e: React.MouseEvent, threadId: number, currentTitle: string) => {
@@ -236,15 +291,15 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
   return (
     <div style={{ display: 'flex', height: '100%', overflow: 'hidden', backgroundColor: '#0d1117' }}>
       
-      {/* Thread Sidebar */}
-      <div style={{ width: '250px', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column' }}>
+      {/* Thread Sidebar (Resizable) */}
+      <div style={{ width: `${sidebarWidth}px`, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', flexShrink: 0, userSelect: isResizing ? 'none' : 'auto' }}>
         <div style={{ padding: '1rem', borderBottom: '1px solid var(--border)' }}>
           <button 
             onClick={startNewThread} 
             className="btn btn-secondary" 
             style={{ width: '100%', opacity: role === 'admin' ? 1 : 0.6 }}
           >
-            <MessageSquarePlus size={16} style={{ marginRight: '0.5rem' }}/> Nuevo Hilo {role !== 'admin' && '(Admin)'}
+            <MessageSquarePlus size={16} style={{ marginRight: '0.5rem' }}/> New Chat {role !== 'admin' && '(Admin)'}
           </button>
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem' }}>
@@ -286,6 +341,21 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
           ))}
         </div>
       </div>
+
+      {/* Resize Handle */}
+      <div 
+        onMouseDown={startResizing}
+        style={{
+          width: '5px',
+          cursor: 'col-resize',
+          backgroundColor: isResizing ? 'var(--primary)' : 'transparent',
+          transition: 'background-color 0.2s',
+          zIndex: 10,
+          borderRight: '1px solid var(--border)'
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--primary-glow)')}
+        onMouseLeave={(e) => (!isResizing && (e.currentTarget.style.backgroundColor = 'transparent'))}
+      />
 
       {/* Main Chat Area */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
@@ -329,15 +399,16 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
 
         {/* Input */}
         <div style={{ padding: '1.5rem', display: 'flex', justifyContent: 'center' }}>
-          <form onSubmit={handleSend} style={{ width: '100%', maxWidth: '800px', display: 'flex', gap: '0.8rem', background: '#161b22', border: '1px solid #30363d', borderRadius: '12px', padding: '0.5rem', alignItems: 'center' }}>
-            <div style={{ padding: '0.5rem', color: '#8b949e', cursor: 'pointer' }}>+</div>
+          <form onSubmit={handleSend} style={{ width: '100%', maxWidth: '800px', display: 'flex', gap: '0.8rem', background: '#161b22', border: '1px solid #30363d', borderRadius: '12px', padding: '0.5rem 1rem', alignItems: 'center' }}>
             <input 
+              ref={inputRef}
               type="text" 
               style={{ flex: 1, background: 'transparent', border: 'none', color: '#c9d1d9', outline: 'none', fontSize: '0.95rem' }}
               value={input} 
               onChange={e => setInput(e.target.value)}
-              placeholder="Conecta al gateway para chatear..."
+              placeholder="chat agent"
               disabled={loading}
+              autoFocus
             />
             <button type="submit" disabled={loading} style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '0.5rem' }}>
               <Send size={18} />
