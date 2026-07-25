@@ -380,13 +380,20 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
           }}
         >
           {messages.length === 0 ? (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#8b949e', gap: '1rem', padding: '2rem' }}>
-              <div style={{ background: 'rgba(255, 51, 102, 0.1)', padding: '1rem', borderRadius: '50%', border: '1px solid rgba(255, 51, 102, 0.3)' }}>
-                <Bot size={36} color="#ff3366" />
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.8rem', alignSelf: 'flex-start', maxWidth: '85%' }}>
+              <div style={{ background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '50%' }}>
+                <Bot size={18} color="var(--primary)" />
               </div>
-              <div style={{ fontSize: '1.1rem', fontWeight: 600, color: '#e6edf3' }}>NUEVO HILO - SARI AGENT ONLINE</div>
-              <div style={{ fontSize: '0.85rem', color: '#8b949e', textAlign: 'center', maxWidth: '420px', lineHeight: '1.5' }}>
-                Canal de comunicación seguro activo. Puedes enviar preguntas al modelo de lenguaje o ejecutar comandos de control físico para los periféricos.
+              <div style={{
+                background: 'rgba(139, 148, 158, 0.15)',
+                border: '1px solid var(--border)',
+                padding: '0.8rem 1.2rem',
+                borderRadius: '12px',
+                borderTopLeftRadius: 0,
+                color: 'var(--text-main)',
+                fontSize: '0.95rem'
+              }}>
+                SISTEMA SARI AGENT ONLINE. Conversación iniciada. Escriba su consulta táctica para comenzar.
               </div>
             </div>
           ) : (
