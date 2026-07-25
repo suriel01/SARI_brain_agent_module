@@ -5,9 +5,9 @@
   --bg-panel: rgba(31, 41, 55, 0.85);
   --bg-card: rgba(17, 24, 39, 0.7);
   
-  --primary: #10b981;
-  --primary-glow: rgba(16, 185, 129, 0.4);
-  --primary-hover: #34d399;
+  --primary: #ff3366;
+  --primary-glow: rgba(255, 51, 102, 0.4);
+  --primary-hover: #ff4d79;
   
   --warning: #f59e0b;
   --warning-glow: rgba(245, 158, 11, 0.4);
@@ -20,7 +20,7 @@
   --text-muted: #9ca3af;
   
   --border: rgba(55, 65, 81, 0.8);
-  --border-focus: rgba(16, 185, 129, 0.4);
+  --border-focus: rgba(255, 51, 102, 0.4);
 }
 
 * {

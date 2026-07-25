@@ -299,7 +299,7 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
               )}
               
               <div style={{
-                background: msg.role === 'user' ? 'linear-gradient(135deg, var(--primary-glow), rgba(16, 185, 129, 0.05))' : 
+                background: msg.role === 'user' ? 'linear-gradient(135deg, var(--primary-glow), rgba(255, 51, 102, 0.05))' : 
                             msg.role === 'system' ? 'rgba(139, 148, 158, 0.15)' : 'rgba(255,255,255,0.03)',
                 border: `1px solid ${msg.role === 'user' ? 'var(--primary-glow)' : msg.role === 'system' ? 'var(--border)' : 'var(--border)'}`,
                 padding: '0.8rem 1.2rem',

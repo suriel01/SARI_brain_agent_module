@@ -212,7 +212,7 @@ export default function AdminPanel({ token }: AdminPanelProps) {
                   </td>
                   <td style={{ padding: '0.8rem', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
                     {u.role === 'admin' ? (
-                      <span style={{ color: '#10b981' }}>Full Access</span>
+                      <span style={{ color: 'var(--primary)' }}>Full Access</span>
                     ) : (
                       <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
                         {u.can_create_chats && <span className="badge">Crear</span>}

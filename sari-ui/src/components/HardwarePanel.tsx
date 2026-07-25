@@ -102,8 +102,8 @@ export default function HardwarePanel({ token, role, requestPin, state, fetchSta
                   <span style={{ 
                     padding: '0.2rem 0.5rem', 
                     borderRadius: '4px', 
-                    background: log.level === 'WARN' ? 'rgba(234, 179, 8, 0.1)' : log.level === 'ERROR' ? 'rgba(255, 0, 60, 0.1)' : 'rgba(46, 160, 67, 0.1)',
-                    color: log.level === 'WARN' ? '#eab308' : log.level === 'ERROR' ? '#ff003c' : '#2ea043'
+                    background: log.level === 'WARN' ? 'rgba(234, 179, 8, 0.1)' : log.level === 'ERROR' ? 'rgba(255, 0, 60, 0.1)' : 'rgba(255, 51, 102, 0.1)',
+                    color: log.level === 'WARN' ? '#eab308' : log.level === 'ERROR' ? '#ff003c' : 'var(--primary)'
                   }}>
                     {log.level}
                   </span>
