@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { LogOut, ShieldAlert } from 'lucide-react';
+import { LogOut, ShieldAlert, Eye, BellRing, Lock } from 'lucide-react';
 import ChatPanel from './ChatPanel';
 import HardwarePanel from './HardwarePanel';
 import AdminPanel from './AdminPanel';
 import PinModal from './PinModal';
+import CameraFeed from './CameraFeed';
 
 interface DashboardProps {
   token: string;
@@ -15,92 +16,63 @@ const API_BASE = 'http://localhost:7000/api';
 
 export default function Dashboard({ token, role, onLogout }: DashboardProps) {
   const [state, setState] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'chat' | 'hardware' | 'admin'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'perception' | 'hardware' | 'admin'>('chat');
   
   // Modal State
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<string>('');
-  const [pendingCallback, setPendingCallback] = useState<((pin: string) => void) | null>(null);
+  const [actionCallback, setActionCallback] = useState<((pin: string) => void) | null>(null);
 
   const fetchState = async () => {
     try {
-      const res = await fetch(`${API_BASE}/state`, {
+      const res = await fetch(`${API_BASE}/hardware/state`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res.ok) {
-        setState(await res.json());
-      } else if (res.status === 401) {
-        onLogout();
+        const data = await res.json();
+        setState(data);
       }
     } catch (e) {
-      console.error('Error fetching state', e);
+      console.error(e);
     }
   };
 
   useEffect(() => {
     fetchState();
-    const interval = setInterval(fetchState, 2000);
+    const interval = setInterval(fetchState, 1200);
     return () => clearInterval(interval);
   }, [token]);
 
-  // Sintetizador Web Audio API para reproducir alarma física en la UI
-  useEffect(() => {
-    if (!state?.siren_active) return;
-
-    let audioCtx: AudioContext | null = null;
-    let osc: OscillatorNode | null = null;
-    let gain: GainNode | null = null;
-    let intervalId: any = null;
-
-    try {
-      audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      if (audioCtx.state === 'suspended') {
-        audioCtx.resume();
-      }
-      osc = audioCtx.createOscillator();
-      gain = audioCtx.createGain();
-
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(700, audioCtx.currentTime);
-      gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
-
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start();
-
-      let high = false;
-      intervalId = setInterval(() => {
-        if (audioCtx && osc) {
-          osc.frequency.setValueAtTime(high ? 700 : 950, audioCtx.currentTime);
-          high = !high;
-        }
-      }, 350);
-    } catch (e) {
-      console.error('AudioContext error:', e);
-    }
-
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-      if (osc) {
-        try { osc.stop(); } catch(e){}
-      }
-      if (audioCtx) {
-        try { audioCtx.close(); } catch(e){}
-      }
-    };
-  }, [state?.siren_active, state?.alert_count]);
-
   const requestPin = (actionName: string, callback: (pin: string) => void) => {
     setPendingAction(actionName);
-    setPendingCallback(() => callback);
+    setActionCallback(() => callback);
     setPinModalOpen(true);
   };
 
   const handlePinSubmit = (pin: string) => {
-    if (pendingCallback) {
-      pendingCallback(pin);
+    if (actionCallback) {
+      actionCallback(pin);
     }
     setPinModalOpen(false);
+  };
+
+  const handleQuickEmergencyAction = (actionName: string) => {
+    if (role !== 'admin') {
+      alert('Permiso denegado: Se requiere rol de Administrador.');
+      return;
+    }
+    requestPin(actionName, async (pin) => {
+      try {
+        await fetch(`${API_BASE}/manual_action`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ action: actionName, pin })
+        });
+        fetchState();
+      } catch (e) {
+        console.error('Error executing quick action', e);
+      }
+    });
   };
 
   return (
@@ -121,14 +93,22 @@ export default function Dashboard({ token, role, onLogout }: DashboardProps) {
           
           <div 
             onClick={() => setActiveTab('chat')}
-            style={{ padding: '0.5rem 1rem', cursor: 'pointer', borderRadius: '6px', backgroundColor: activeTab === 'chat' ? 'rgba(255, 51, 102, 0.15)' : 'transparent', color: activeTab === 'chat' ? '#ff3366' : '#c9d1d9', display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '0.2rem' }}
+            style={{ padding: '0.55rem 1rem', cursor: 'pointer', borderRadius: '6px', backgroundColor: activeTab === 'chat' ? 'rgba(255, 51, 102, 0.15)' : 'transparent', color: activeTab === 'chat' ? '#ff3366' : '#c9d1d9', display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '0.2rem' }}
           >
             <span style={{ fontSize: '0.9rem' }}>Chat</span>
           </div>
 
           <div 
+            onClick={() => setActiveTab('perception')}
+            style={{ padding: '0.55rem 1rem', cursor: 'pointer', borderRadius: '6px', backgroundColor: activeTab === 'perception' ? 'rgba(255, 51, 102, 0.15)' : 'transparent', color: activeTab === 'perception' ? '#ff3366' : '#c9d1d9', display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '0.2rem' }}
+          >
+            <Eye size={16} />
+            <span style={{ fontSize: '0.9rem' }}>Live Perception (OJOS)</span>
+          </div>
+
+          <div 
             onClick={() => setActiveTab('hardware')}
-            style={{ padding: '0.5rem 1rem', cursor: 'pointer', borderRadius: '6px', backgroundColor: activeTab === 'hardware' ? 'rgba(255, 51, 102, 0.15)' : 'transparent', color: activeTab === 'hardware' ? '#ff3366' : '#c9d1d9', display: 'flex', alignItems: 'center', gap: '0.8rem' }}
+            style={{ padding: '0.55rem 1rem', cursor: 'pointer', borderRadius: '6px', backgroundColor: activeTab === 'hardware' ? 'rgba(255, 51, 102, 0.15)' : 'transparent', color: activeTab === 'hardware' ? '#ff3366' : '#c9d1d9', display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '0.2rem' }}
           >
             <span style={{ fontSize: '0.9rem' }}>Hardware Control</span>
           </div>
@@ -136,7 +116,7 @@ export default function Dashboard({ token, role, onLogout }: DashboardProps) {
           {role === 'admin' && (
             <div 
               onClick={() => setActiveTab('admin')}
-              style={{ marginTop: '0.5rem', padding: '0.5rem 1rem', cursor: 'pointer', borderRadius: '6px', backgroundColor: activeTab === 'admin' ? 'var(--primary-glow)' : 'transparent', color: activeTab === 'admin' ? 'var(--primary)' : '#c9d1d9', display: 'flex', alignItems: 'center', gap: '0.8rem' }}
+              style={{ marginTop: '0.2rem', padding: '0.55rem 1rem', cursor: 'pointer', borderRadius: '6px', backgroundColor: activeTab === 'admin' ? 'var(--primary-glow)' : 'transparent', color: activeTab === 'admin' ? 'var(--primary)' : '#c9d1d9', display: 'flex', alignItems: 'center', gap: '0.8rem' }}
             >
               <span style={{ fontSize: '0.9rem' }}>User Management</span>
             </div>
@@ -183,15 +163,60 @@ export default function Dashboard({ token, role, onLogout }: DashboardProps) {
       {/* Main Content Area */}
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         
-        {/* Topbar */}
+        {/* Topbar with 1-Click Emergency Toolbar */}
         <header style={{ height: '60px', display: 'flex', alignItems: 'center', padding: '0 1.5rem', borderBottom: '1px solid #30363d', justifyContent: 'space-between', backgroundColor: '#0d1117' }}>
            <div style={{ fontSize: '1rem', fontWeight: 600, color: '#ff3366', letterSpacing: '0.02em' }}>
-             {activeTab === 'chat' ? 'Chat' : activeTab === 'hardware' ? 'Hardware Control' : 'User Management'}
+             {activeTab === 'chat' ? 'Chat' : activeTab === 'perception' ? 'Live Perception (OJOS)' : activeTab === 'hardware' ? 'Hardware Control' : 'User Management'}
            </div>
 
-           <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '0.3rem 0.8rem', borderRadius: '20px', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', border: '1px solid #30363d' }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: state?.siren_active ? '#ff3366' : '#2ea043' }}></div>
-              <span style={{ color: '#c9d1d9' }}>{state?.siren_active ? 'Siren Active' : 'System Normal'}</span>
+           {/* Emergency 1-Click Action Buttons */}
+           <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+              <button 
+                onClick={() => handleQuickEmergencyAction('activar_sirena')}
+                title="Activar Sirena Física (30s)"
+                style={{
+                  background: 'rgba(255, 51, 102, 0.15)',
+                  border: '1px solid #ff3366',
+                  color: '#ff3366',
+                  padding: '0.35rem 0.8rem',
+                  borderRadius: '6px',
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem'
+                }}
+              >
+                <BellRing size={14} /> Sirena (30s)
+              </button>
+
+              <button 
+                onClick={() => handleQuickEmergencyAction('cerrar_accesos')}
+                title="Bloquear Portones Perimetrales"
+                style={{
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid #30363d',
+                  color: '#c9d1d9',
+                  padding: '0.35rem 0.8rem',
+                  borderRadius: '6px',
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem'
+                }}
+              >
+                <Lock size={14} /> Bloquear Accesos
+              </button>
+
+              <div style={{ width: '1px', height: '20px', backgroundColor: '#30363d', margin: '0 0.2rem' }} />
+
+              <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '0.3rem 0.8rem', borderRadius: '20px', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', border: '1px solid #30363d' }}>
+                 <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: state?.siren_active ? '#ff3366' : '#2ea043' }}></div>
+                 <span style={{ color: '#c9d1d9' }}>{state?.siren_active ? 'Siren Active' : 'System Normal'}</span>
+              </div>
            </div>
         </header>
 
@@ -199,6 +224,10 @@ export default function Dashboard({ token, role, onLogout }: DashboardProps) {
         <div style={{ flex: 1, overflow: 'hidden' }}>
           {activeTab === 'chat' ? (
             <ChatPanel token={token} role={role} requestPin={requestPin} fetchState={fetchState} lastAlertThreadId={state?.last_alert_thread_id} />
+          ) : activeTab === 'perception' ? (
+            <div style={{ padding: '2rem', height: '100%' }}>
+              <CameraFeed />
+            </div>
           ) : activeTab === 'hardware' ? (
             <HardwarePanel token={token} role={role} requestPin={requestPin} state={state} fetchState={fetchState} />
           ) : (
