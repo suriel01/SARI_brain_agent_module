@@ -176,38 +176,24 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
     });
   };
 
-  const sendToBackend = async (userPrompt: string) => {
+  const sendToBackend = async (text: string) => {
     setLoading(true);
     try {
-      let currentId = activeThreadId;
+      const payload: any = { message: text };
+      if (activeThreadId) payload.thread_id = activeThreadId;
 
-      if (!currentId) {
-        const createRes = await fetch(`${API_BASE}/chat/threads`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({ title: userPrompt.slice(0, 25) + '...' })
-        });
-        if (createRes.ok) {
-          const newThread = await createRes.json();
-          currentId = newThread.id;
-          setActiveThreadId(currentId);
-          fetchThreads();
-        } else {
-          setMessages(prev => [...prev, { role: 'system', content: 'No se pudo crear un nuevo hilo automáticamente.' }]);
-          setLoading(false);
-          return;
-        }
-      }
-
-      const res = await fetch(`${API_BASE}/chat/threads/${currentId}/messages`, {
+      const res = await fetch(`${API_BASE}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ prompt: userPrompt })
+        body: JSON.stringify(payload)
       });
-
+      
       if (res.ok) {
-        const data = await res.json();
-        setMessages(prev => [...prev, { role: 'agent', content: data.response }]);
+        if (!activeThreadId) {
+          await fetchThreads();
+        } else {
+          fetchMessages(activeThreadId);
+        }
         fetchState();
       } else {
         const errData = await res.json();
