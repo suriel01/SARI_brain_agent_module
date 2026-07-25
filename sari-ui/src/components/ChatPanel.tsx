@@ -379,35 +379,47 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
             maskImage: 'linear-gradient(to bottom, transparent 0%, black 5%, black 95%, transparent 100%)'
           }}
         >
-          {messages.map((msg, idx) => (
-            <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.8rem', alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
-              {msg.role !== 'user' && (
-                <div style={{ background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '50%' }}>
-                  <Bot size={18} color="var(--primary)" />
-                </div>
-              )}
-              
-              <div style={{
-                background: msg.role === 'user' ? 'linear-gradient(135deg, var(--primary-glow), rgba(255, 51, 102, 0.05))' : 
-                            msg.role === 'system' ? 'rgba(139, 148, 158, 0.15)' : 'rgba(255,255,255,0.03)',
-                border: `1px solid ${msg.role === 'user' ? 'var(--primary-glow)' : msg.role === 'system' ? 'var(--border)' : 'var(--border)'}`,
-                padding: '0.8rem 1.2rem',
-                borderRadius: '12px',
-                borderTopRightRadius: msg.role === 'user' ? 0 : '12px',
-                borderTopLeftRadius: msg.role !== 'user' ? 0 : '12px',
-                color: msg.role === 'system' ? 'var(--text-main)' : 'var(--text-main)',
-                fontSize: '0.95rem'
-              }}>
-                {msg.content}
+          {messages.length === 0 ? (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#8b949e', gap: '1rem', padding: '2rem' }}>
+              <div style={{ background: 'rgba(255, 51, 102, 0.1)', padding: '1rem', borderRadius: '50%', border: '1px solid rgba(255, 51, 102, 0.3)' }}>
+                <Bot size={36} color="#ff3366" />
               </div>
-
-              {msg.role === 'user' && (
-                <div style={{ background: 'var(--primary-glow)', padding: '0.5rem', borderRadius: '50%' }}>
-                  <User size={18} color="var(--primary)" />
-                </div>
-              )}
+              <div style={{ fontSize: '1.1rem', fontWeight: 600, color: '#e6edf3' }}>NUEVO HILO - SARI AGENT ONLINE</div>
+              <div style={{ fontSize: '0.85rem', color: '#8b949e', textAlign: 'center', maxWidth: '420px', lineHeight: '1.5' }}>
+                Canal de comunicación seguro activo. Puedes enviar preguntas al modelo de lenguaje o ejecutar comandos de control físico para los periféricos.
+              </div>
             </div>
-          ))}
+          ) : (
+            messages.map((msg, idx) => (
+              <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.8rem', alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
+                {msg.role !== 'user' && (
+                  <div style={{ background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '50%' }}>
+                    <Bot size={18} color="var(--primary)" />
+                  </div>
+                )}
+                
+                <div style={{
+                  background: msg.role === 'user' ? 'linear-gradient(135deg, var(--primary-glow), rgba(255, 51, 102, 0.05))' : 
+                              msg.role === 'system' ? 'rgba(139, 148, 158, 0.15)' : 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${msg.role === 'user' ? 'var(--primary-glow)' : msg.role === 'system' ? 'var(--border)' : 'var(--border)'}`,
+                  padding: '0.8rem 1.2rem',
+                  borderRadius: '12px',
+                  borderTopRightRadius: msg.role === 'user' ? 0 : '12px',
+                  borderTopLeftRadius: msg.role !== 'user' ? 0 : '12px',
+                  color: msg.role === 'system' ? 'var(--text-main)' : 'var(--text-main)',
+                  fontSize: '0.95rem'
+                }}>
+                  {msg.content}
+                </div>
+
+                {msg.role === 'user' && (
+                  <div style={{ background: 'var(--primary-glow)', padding: '0.5rem', borderRadius: '50%' }}>
+                    <User size={18} color="var(--primary)" />
+                  </div>
+                )}
+              </div>
+            ))
+          )}
           {loading && (
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', color: 'var(--text-muted)' }}>
               <Bot size={16} /> <span style={{ fontSize: '0.8rem', fontStyle: 'italic', animation: 'pulse 1.5s infinite' }}>SARI analizando parámetros...</span>
