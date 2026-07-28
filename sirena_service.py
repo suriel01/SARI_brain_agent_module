@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-sirena_service.py — Microservicio HTTP minimalista para reproducir alertas sonoras.
+sirena_service.py — Microservicio HTTP de Alarma Física & Respuesta Auditiva SARI.
 
-Escucha en 127.0.0.1:5000 (solo accesible localmente).
-Reproduce audio vía `spd-say` en las bocinas de la laptop.
-
-Llamado por:
-  - cerebro.py (activación automática ante intrusión)
-  - mcp_server.py (activación manual desde Odysseus)
+Escucha en 0.0.0.0:5000.
+Reproduce alertas sonoras físicas de sirena y voz sintética a través de los altavoces.
 """
 
+import os
+import math
+import struct
+import wave
 import json
 import subprocess
 import threading
@@ -17,76 +17,107 @@ import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 PORT = 5000
-BIND = "0.0.0.0"  # Escuchar en todas las interfaces para que Docker pueda llegar
+BIND = "0.0.0.0"
 
-# Control de la sirena activa
 _sirena_activa = False
 _sirena_lock = threading.Lock()
+_active_processes = []
 
+WAV_PATH = "/tmp/sirena_alarm.wav"
+
+def _generar_wav_sirena():
+    """Genera un archivo WAV de tono de alarma física de alta frecuencia (2 tonos)."""
+    try:
+        sample_rate = 22050
+        duracion_sec = 4
+        num_samples = sample_rate * duracion_sec
+        with wave.open(WAV_PATH, 'wb') as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(sample_rate)
+            
+            for i in range(num_samples):
+                t = i / sample_rate
+                # Modulación de frecuencia de sirena policial 700Hz - 1300Hz
+                freq = 1000 + 400 * math.sin(2 * math.pi * 3 * t)
+                value = int(22000 * math.sin(2 * math.pi * freq * t))
+                data = struct.pack('<h', value)
+                wav_file.writeframesraw(data)
+    except Exception as e:
+        print(f"[SIRENA] Error al generar WAV de sirena: {e}")
+
+# Generar archivo de tono al iniciar
+_generar_wav_sirena()
+
+def _detener_procesos_audio():
+    global _active_processes
+    with _sirena_lock:
+        for proc in _active_processes:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+        _active_processes.clear()
+
+def _play_audio_command(cmd_list):
+    try:
+        proc = subprocess.Popen(cmd_list, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        with _sirena_lock:
+            _active_processes.append(proc)
+        proc.wait()
+    except Exception as e:
+        print(f"[SIRENA] Error ejecutando comando de audio {cmd_list[0]}: {e}")
 
 def _reproducir_alerta(duracion: int):
-    """Reproduce la alerta sonora usando spd-say."""
+    """Reproduce la alerta sonora física de sirena y voz sintética."""
     global _sirena_activa
     with _sirena_lock:
         _sirena_activa = True
 
-    try:
-        # Cancelar reproducción previa si la hubiera
-        subprocess.run(["pkill", "-f", "spd-say"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception:
-        pass
+    _detener_procesos_audio()
+    print(f"[SIRENA] 🚨 ALARMA FÍSICA ACTIVADA por {duracion} segundos.")
 
-    try:
-        mensaje = f"Alerta de seguridad SARI. Intrusión detectada. Sirena activa por {duracion} segundos."
-        subprocess.Popen(
-            ["spd-say", "-l", "es", "-r", "-30", mensaje],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-        print(f"[SIRENA] 🚨 Alarma activada por {duracion} segundos.")
+    def _loop_sirena():
+        t_start = time.time()
+        
+        # Voz de anuncio inicial en hilo secundario
+        mensaje_voz = f"Alerta de seguridad SARI. Intrusión detectada. Sirena activa por {duracion} segundos."
+        threading.Thread(target=lambda: _play_audio_command(["espeak-ng", "-v", "es", "-s", "150", mensaje_voz]), daemon=True).start()
 
-        # Programar la desactivación automática
-        def _auto_desactivar():
-            time.sleep(duracion)
+        # Bucle de reproduccion de tono de sirena mientras este activa
+        while True:
             with _sirena_lock:
-                global _sirena_activa
-                _sirena_activa = False
-            print("[SIRENA] ⏹️ Alarma finalizada automáticamente.")
+                if not _sirena_activa or (time.time() - t_start >= duracion):
+                    break
 
-        threading.Thread(target=_auto_desactivar, daemon=True).start()
+            # Probar paplay (PulseAudio) primero, luego aplay (ALSA)
+            if os.path.exists(WAV_PATH):
+                _play_audio_command(["paplay", WAV_PATH])
+            else:
+                time.sleep(1)
 
-    except FileNotFoundError:
-        print("[SIRENA] ❌ Error: 'spd-say' no encontrado. Instálalo con: sudo apt install speech-dispatcher")
         with _sirena_lock:
             _sirena_activa = False
-    except Exception as e:
-        print(f"[SIRENA] ❌ Error al reproducir audio: {e}")
-        with _sirena_lock:
-            _sirena_activa = False
+        print("[SIRENA] ⏹️ Alarma física finalizada automáticamente.")
+
+    threading.Thread(target=_loop_sirena, daemon=True).start()
 
 
 def _desactivar_alerta():
-    """Desactiva la sirena y reproduce confirmación."""
+    """Desactiva la sirena física inmediatamente."""
     global _sirena_activa
     with _sirena_lock:
         _sirena_activa = False
-
-    try:
-        subprocess.Popen(
-            ["spd-say", "-l", "es", "Sirena desactivada."],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-        print("[SIRENA] 🔊 Sirena desactivada manualmente.")
-    except Exception as e:
-        print(f"[SIRENA] Error al confirmar desactivación: {e}")
+    
+    _detener_procesos_audio()
+    print("[SIRENA] 🔊 Sirena desactivada manualmente.")
+    threading.Thread(target=lambda: _play_audio_command(["espeak-ng", "-v", "es", "Sirena desactivada."]), daemon=True).start()
 
 
 class SirenaHTTPHandler(BaseHTTPRequestHandler):
-    """Handler HTTP minimalista para el servicio de sirena."""
+    """Handler HTTP para el servicio de sirena."""
 
     def log_message(self, format, *args):
-        """Silenciar los logs de acceso HTTP por defecto."""
         pass
 
     def _send_json(self, status: int, data: dict):
@@ -118,14 +149,16 @@ class SirenaHTTPHandler(BaseHTTPRequestHandler):
             _reproducir_alerta(duracion)
             self._send_json(200, {
                 "status": "success",
-                "message": f"Alarma activada por {duracion}s"
+                "message": f"Alarma activada por {duracion}s",
+                "sirena_activa": True
             })
 
         elif self.path == "/api/alarma/desactivar":
             _desactivar_alerta()
             self._send_json(200, {
                 "status": "success",
-                "message": "Alarma desactivada"
+                "message": "Alarma desactivada",
+                "sirena_activa": False
             })
 
         else:
@@ -133,10 +166,8 @@ class SirenaHTTPHandler(BaseHTTPRequestHandler):
 
 
 def iniciar_servicio():
-    """Punto de entrada principal del servicio de sirena."""
     server = HTTPServer((BIND, PORT), SirenaHTTPHandler)
     print(f"[SIRENA] Servicio de audio escuchando en http://{BIND}:{PORT}")
-    print(f"[SIRENA] Health check: http://localhost:{PORT}/health")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

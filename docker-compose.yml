@@ -27,6 +27,11 @@ services:
     container_name: sari-sirena
     ports:
       - "5000:5000"
+    environment:
+      - PULSE_SERVER=unix:/run/user/1000/pulse/native
+    volumes:
+      - /run/user/1000/pulse/native:/run/user/1000/pulse/native
+      - /home/surielalcantara/.config/pulse/cookie:/root/.config/pulse/cookie
     devices:
       - "/dev/snd:/dev/snd"
     restart: unless-stopped

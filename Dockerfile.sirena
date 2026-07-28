@@ -2,11 +2,13 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install speech-dispatcher for spd-say and audio tools
+# Install PulseAudio, ALSA, espeak-ng, and audio utilities for physical speaker sound
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    pulseaudio-utils \
+    alsa-utils \
+    espeak-ng \
     speech-dispatcher \
     speech-dispatcher-espeak-ng \
-    alsa-utils \
     && rm -rf /var/lib/apt/lists/*
 
 COPY sirena_service.py /app/
