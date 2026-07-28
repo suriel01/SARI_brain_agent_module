@@ -3,13 +3,9 @@
 sirena_service.py — Microservicio HTTP de Alarma Física & Respuesta Auditiva SARI.
 
 Escucha en 0.0.0.0:5000.
-Reproduce alertas sonoras físicas de sirena y voz sintética a través de los altavoces.
+Reproduce alertas de voz sintética a través de los altavoces mediante espeak-ng/spd-say.
 """
 
-import os
-import math
-import struct
-import wave
 import json
 import subprocess
 import threading
@@ -23,31 +19,6 @@ _sirena_activa = False
 _sirena_lock = threading.Lock()
 _active_processes = []
 
-WAV_PATH = "/tmp/sirena_alarm.wav"
-
-def _generar_wav_sirena():
-    """Genera un archivo WAV de tono de alarma física de alta frecuencia (2 tonos)."""
-    try:
-        sample_rate = 22050
-        duracion_sec = 4
-        num_samples = sample_rate * duracion_sec
-        with wave.open(WAV_PATH, 'wb') as wav_file:
-            wav_file.setnchannels(1)
-            wav_file.setsampwidth(2)
-            wav_file.setframerate(sample_rate)
-            
-            for i in range(num_samples):
-                t = i / sample_rate
-                # Modulación de frecuencia de sirena policial 700Hz - 1300Hz
-                freq = 1000 + 400 * math.sin(2 * math.pi * 3 * t)
-                value = int(22000 * math.sin(2 * math.pi * freq * t))
-                data = struct.pack('<h', value)
-                wav_file.writeframesraw(data)
-    except Exception as e:
-        print(f"[SIRENA] Error al generar WAV de sirena: {e}")
-
-# Generar archivo de tono al iniciar
-_generar_wav_sirena()
 
 def _detener_procesos_audio():
     global _active_processes
@@ -59,6 +30,7 @@ def _detener_procesos_audio():
                 pass
         _active_processes.clear()
 
+
 def _play_audio_command(cmd_list):
     try:
         proc = subprocess.Popen(cmd_list, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -68,39 +40,34 @@ def _play_audio_command(cmd_list):
     except Exception as e:
         print(f"[SIRENA] Error ejecutando comando de audio {cmd_list[0]}: {e}")
 
+
 def _reproducir_alerta(duracion: int):
-    """Reproduce la alerta sonora física de sirena y voz sintética."""
+    """Reproduce la alerta sonora usando el sintetizador de voz (espeak-ng/spd-say)."""
     global _sirena_activa
     with _sirena_lock:
         _sirena_activa = True
 
     _detener_procesos_audio()
-    print(f"[SIRENA] 🚨 ALARMA FÍSICA ACTIVADA por {duracion} segundos.")
+    print(f"[SIRENA] 🚨 Alarma activada por {duracion} segundos.")
 
-    def _loop_sirena():
+    def _loop_anuncio():
         t_start = time.time()
+        mensaje = f"Alerta de seguridad SARI. Intrusión detectada. Sirena activa por {duracion} segundos."
         
-        # Voz de anuncio inicial en hilo secundario
-        mensaje_voz = f"Alerta de seguridad SARI. Intrusión detectada. Sirena activa por {duracion} segundos."
-        threading.Thread(target=lambda: _play_audio_command(["espeak-ng", "-v", "es", "-s", "150", mensaje_voz]), daemon=True).start()
-
-        # Bucle de reproduccion de tono de sirena mientras este activa
         while True:
             with _sirena_lock:
                 if not _sirena_activa or (time.time() - t_start >= duracion):
                     break
-
-            # Probar paplay (PulseAudio) primero, luego aplay (ALSA)
-            if os.path.exists(WAV_PATH):
-                _play_audio_command(["paplay", WAV_PATH])
-            else:
-                time.sleep(1)
+            
+            # Anuncio de voz
+            _play_audio_command(["espeak-ng", "-v", "es", "-s", "145", mensaje])
+            time.sleep(1)
 
         with _sirena_lock:
             _sirena_activa = False
-        print("[SIRENA] ⏹️ Alarma física finalizada automáticamente.")
+        print("[SIRENA] ⏹️ Alarma finalizada automáticamente.")
 
-    threading.Thread(target=_loop_sirena, daemon=True).start()
+    threading.Thread(target=_loop_anuncio, daemon=True).start()
 
 
 def _desactivar_alerta():

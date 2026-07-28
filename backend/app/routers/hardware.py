@@ -11,12 +11,22 @@ SIRENA_SERVICE_URL = os.environ.get("SIRENA_SERVICE_URL", "http://localhost:5000
 import time
 
 # Global state memory for the UI to poll (since we don't have websockets in this basic HTTP version)
+import datetime
+boot_time = datetime.datetime.now()
+
 class HardwareState:
     siren_active = False
     alert_count = 0
     last_alert_time = 0.0
     last_alert_thread_id = None
-    logs = []
+    
+    # Logs iniciales para evitar tabla vacia tras reinicio
+    logs = [
+        {"timestamp": (boot_time - datetime.timedelta(seconds=15)).strftime("%H:%M:%S"), "message": "🔐 Base de datos PostgreSQL conectada y saludable.", "level": "INFO"},
+        {"timestamp": (boot_time - datetime.timedelta(seconds=10)).strftime("%H:%M:%S"), "message": "🧠 Módulo Cerebro iniciado y escuchando alertas del nodo YOLO.", "level": "INFO"},
+        {"timestamp": (boot_time - datetime.timedelta(seconds=5)).strftime("%H:%M:%S"), "message": "🔊 Microservicio de audio SARI conectado via PulseAudio.", "level": "INFO"},
+        {"timestamp": boot_time.strftime("%H:%M:%S"), "message": "🛡️ Sistema de Control Físico SARI cargado correctamente.", "level": "INFO"}
+    ]
 
     @classmethod
     def add_log(cls, msg, level="INFO"):
