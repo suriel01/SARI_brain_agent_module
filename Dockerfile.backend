@@ -17,7 +17,10 @@ RUN pip install --no-cache-dir \
     sqlalchemy \
     psycopg2-binary \
     passlib \
-    bcrypt
+    bcrypt \
+    pgvector \
+    mcp \
+    nemoguardrails
 
 # Copy project files
 COPY backend/app /app/app

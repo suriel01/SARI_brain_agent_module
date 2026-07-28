@@ -1,26 +1,29 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
-  --bg-dark: #111827;
-  --bg-panel: rgba(31, 41, 55, 0.85);
-  --bg-card: rgba(17, 24, 39, 0.7);
+  --bg-dark: #090a0f;
+  --bg-panel: rgba(19, 21, 28, 0.88);
+  --bg-card: rgba(15, 17, 23, 0.75);
   
-  --primary: #ff3366;
-  --primary-glow: rgba(255, 51, 102, 0.4);
-  --primary-hover: #ff4d79;
+  --primary: #0284c7;
+  --primary-glow: rgba(2, 132, 199, 0.2);
+  --primary-hover: #0369a1;
   
+  --success: #10b981;
+  --success-glow: rgba(16, 185, 129, 0.25);
+
   --warning: #f59e0b;
-  --warning-glow: rgba(245, 158, 11, 0.4);
+  --warning-glow: rgba(245, 158, 11, 0.25);
   
-  --danger: #ef4444;
-  --danger-hover: #f87171;
-  --danger-glow: rgba(239, 68, 68, 0.6);
+  --danger: #ff0055;
+  --danger-hover: #ff3366;
+  --danger-glow: rgba(255, 0, 85, 0.4);
   
-  --text-main: #f9fafb;
-  --text-muted: #9ca3af;
+  --text-main: #f1f5f9;
+  --text-muted: #94a3b8;
   
-  --border: rgba(55, 65, 81, 0.8);
-  --border-focus: rgba(255, 51, 102, 0.4);
+  --border: rgba(45, 50, 62, 0.8);
+  --border-focus: rgba(148, 163, 184, 0.4);
 }
 
 * {
@@ -36,17 +39,22 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-image: 
-    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-  background-size: 30px 30px;
-  background-attachment: fixed;
   min-height: 100vh;
+  overflow: hidden;
 }
 
 h1, h2, h3, h4, h5, h6 {
   font-weight: 600;
   letter-spacing: -0.025em;
+}
+
+.glass-panel {
+  background: var(--bg-panel);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 4px 24px -1px rgba(0, 0, 0, 0.3);
 }
 
 .glass-panel {

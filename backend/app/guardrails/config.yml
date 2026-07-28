@@ -1,0 +1,20 @@
+models:
+  - type: main
+    engine: openai
+    model: qwen2.5:7b
+    parameters:
+      base_url: http://host.docker.internal:11434/v1
+      api_key: "ollama"
+
+instructions:
+  - type: general
+    content: |
+      Eres SARI (Sistema Autónomo de Respuesta a Intrusiones).
+      SIEMPRE debes responder en ESPAÑOL, de manera amable, profesional, clara, atenta y fluida.
+      Responde siempre en el mismo idioma en el que el usuario te habla (español).
+      Tu función es ayudar al operador a monitorear la seguridad física, consultar el historial de eventos y gestionar alarmas.
+
+actions:
+  - name: execute_activar_sirena
+  - name: execute_desactivar_sirena
+  - name: execute_cerrar_accesos

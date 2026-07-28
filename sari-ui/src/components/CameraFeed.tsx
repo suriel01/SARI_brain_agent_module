@@ -23,7 +23,7 @@ export default function CameraFeed() {
         </div>
 
         <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
-          <span style={{ fontSize: '0.75rem', background: 'rgba(255, 51, 102, 0.15)', border: '1px solid rgba(255, 51, 102, 0.3)', padding: '0.2rem 0.5rem', borderRadius: '4px', color: '#ff3366', fontWeight: 600 }}>
+          <span style={{ fontSize: '0.75rem', background: 'rgba(0, 240, 255, 0.1)', border: '1px solid rgba(0, 240, 255, 0.3)', padding: '0.2rem 0.5rem', borderRadius: '4px', color: '#00f0ff', fontWeight: 600 }}>
             Transmisión Cámara Hikvision
           </span>
           <span style={{ fontSize: '0.75rem', color: '#8b949e' }}>{fps} FPS</span>
@@ -46,9 +46,9 @@ export default function CameraFeed() {
               key={i}
               onClick={() => { setStreamUrl(preset); setStreamError(false); }}
               style={{
-                background: streamUrl === preset ? 'rgba(255, 51, 102, 0.2)' : 'rgba(255, 255, 255, 0.04)',
-                border: `1px solid ${streamUrl === preset ? '#ff3366' : '#30363d'}`,
-                color: streamUrl === preset ? '#ff3366' : '#8b949e',
+                background: streamUrl === preset ? 'rgba(0, 240, 255, 0.15)' : 'rgba(255, 255, 255, 0.04)',
+                border: `1px solid ${streamUrl === preset ? '#00f0ff' : '#30363d'}`,
+                color: streamUrl === preset ? '#00f0ff' : '#8b949e',
                 padding: '0.25rem 0.5rem',
                 borderRadius: '4px',
                 fontSize: '0.7rem',
@@ -84,7 +84,7 @@ export default function CameraFeed() {
           />
         ) : (
           <div style={{ padding: '2rem', textAlign: 'center', color: '#8b949e' }}>
-            <div style={{ color: '#ff3366', fontWeight: 600, fontSize: '1rem', marginBottom: '0.5rem' }}>
+            <div style={{ color: '#00f0ff', fontWeight: 600, fontSize: '1rem', marginBottom: '0.5rem' }}>
               📡 Esperando Transmisión de Video (`{streamUrl}`)
             </div>
             <div style={{ fontSize: '0.8rem', maxWidth: '500px', margin: '0 auto', lineHeight: '1.4' }}>
@@ -95,8 +95,8 @@ export default function CameraFeed() {
 
         {/* HUD Top Info */}
         <div style={{ position: 'absolute', top: '12px', left: '12px', display: 'flex', gap: '0.5rem', alignItems: 'center', pointerEvents: 'none' }}>
-          <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: !streamError ? '#2ea043' : '#ff3366', boxShadow: !streamError ? '0 0 6px #2ea043' : '0 0 6px #ff3366' }} />
-          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#ff3366', letterSpacing: '1px' }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: !streamError ? '#10b981' : '#ff0055', boxShadow: !streamError ? '0 0 6px #10b981' : '0 0 6px #ff0055' }} />
+          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: !streamError ? '#10b981' : '#ff0055', letterSpacing: '1px' }}>
             {!streamError ? 'LIVE STREAMING' : 'OFFLINE'}
           </span>
           <span style={{ fontSize: '0.75rem', color: '#8b949e', marginLeft: '0.5rem' }}>1080p @ {fps}FPS</span>

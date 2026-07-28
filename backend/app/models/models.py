@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean, Float
 from sqlalchemy.orm import relationship
+from pgvector.sqlalchemy import Vector
 from datetime import datetime
 from ..database import Base
 
@@ -41,3 +42,13 @@ class ChatMessage(Base):
     timestamp = Column(DateTime, default=datetime.utcnow)
 
     thread = relationship("ChatThread", back_populates="messages")
+
+class EventLog(Base):
+    __tablename__ = "event_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    module_name = Column(String(100))
+    event_description = Column(Text)
+    confidence = Column(Float, nullable=True)
+    embedding = Column(Vector(768)) # 768 para nomic-embed-text

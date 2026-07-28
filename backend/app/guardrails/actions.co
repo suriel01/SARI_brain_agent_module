@@ -1,0 +1,97 @@
+define user ask activate siren
+  "activa la sirena"
+  "enciende la alarma"
+  "prende la sirena"
+  "activa alarma"
+  "activa la alarma"
+  "sonar sirena"
+  "sonar alarma"
+  "activate siren"
+  "activate alarm"
+  "turn on siren"
+  "turn on alarm"
+
+define user ask deactivate siren
+  "apaga la sirena"
+  "desactiva la alarma"
+  "silencia la sirena"
+  "apagar alarma"
+  "desactiva sirena"
+  "desactiva la sirena"
+  "apaga la alarma"
+  "desactivar alarma"
+  "desactivar sirena"
+  "silenciar alarma"
+  "deactivate siren"
+  "deactivate alarm"
+  "turn off siren"
+  "turn off alarm"
+
+define user ask close gates
+  "cierra los portones"
+  "bloquea los accesos"
+  "cierra las puertas"
+  "bloquear accesos"
+  "lock gates"
+
+define user express greeting
+  "hola"
+  "buenas"
+  "buenos dias"
+  "buenos días"
+  "buenas tardes"
+  "saludos"
+  "hello"
+
+define user ask identity
+  "quien eres"
+  "quién eres"
+  "quien eres?"
+  "quién eres?"
+  "que haces"
+  "cuál es tu función"
+  "que eres"
+  "who are you"
+
+define user ask status report
+  "reporte de estatus"
+  "estatus del sistema"
+  "reporte del sistema"
+  "status report"
+  "informe de estado"
+  "estado del sistema"
+  "dame el estatus"
+
+define user ask camera snapshot
+  "captura del modulo"
+  "captura de pantalla"
+  "foto de la camara"
+  "imagen de la intrusion"
+  "captura de camara"
+  "mandame una captura"
+  "mándame una captura"
+  "ver camara"
+  "ver cámara"
+
+define flow activate siren
+  user ask activate siren
+  $res = execute execute_activar_sirena
+  bot respond "🚨 Entendido. He activado la sirena/alarma física de emergencia por 30 segundos. El sistema se encuentra en alerta máxima."
+
+define flow deactivate siren
+  user ask deactivate siren
+  $res = execute execute_desactivar_sirena
+  bot respond "🔊 Entendido. La sirena/alarma física ha sido desactivada. El sistema vuelve a su estado de monitoreo normal."
+
+define flow close gates
+  user ask close gates
+  $res = execute execute_cerrar_accesos
+  bot respond "🔒 Entendido. Todos los accesos perimetrales han sido bloqueados con éxito."
+
+define flow express greeting
+  user express greeting
+  bot respond "¡Hola! Soy SARI, tu Sistema Autónomo de Respuesta Inmediata. ¿En qué puedo ayudarte hoy con la seguridad perimetral o el control de hardware?"
+
+define flow ask identity
+  user ask identity
+  bot respond "Soy SARI (Sistema Autónomo de Respuesta Inmediata). Mi función es monitorear el perímetro, registrar alertas de seguridad, consultar el historial táctico y controlar los dispositivos físicos como la sirena/alarma y los accesos."

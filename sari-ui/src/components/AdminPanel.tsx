@@ -11,7 +11,7 @@ export default function AdminPanel({ token }: AdminPanelProps) {
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState('monitor');
   
-  // Permisos granulares
+  // Granular permissions
   const [canCreateChats, setCanCreateChats] = useState(false);
   const [canDeleteChats, setCanDeleteChats] = useState(false);
   const [canRenameChats, setCanRenameChats] = useState(false);
@@ -73,16 +73,16 @@ export default function AdminPanel({ token }: AdminPanelProps) {
         fetchUsers();
       } else {
         const data = await res.json();
-        setError(data.detail || 'Error creando usuario');
+        setError(data.detail || 'Error creating user');
       }
     } catch (e) {
-      setError('Error de red');
+      setError('Network error');
     }
     setLoading(false);
   };
 
   const handleDeleteUser = async (userId: number, username: string) => {
-    if (!confirm(`¿Confirma eliminar al operador "${username}"?`)) return;
+    if (!confirm(`Are you sure you want to delete operator "${username}"?`)) return;
     try {
       const res = await fetch(`http://localhost:7000/api/users/${userId}`, {
         method: 'DELETE',
@@ -92,10 +92,10 @@ export default function AdminPanel({ token }: AdminPanelProps) {
         fetchUsers();
       } else {
         const data = await res.json();
-        alert(data.detail || 'Error al eliminar operador');
+        alert(data.detail || 'Error deleting operator');
       }
     } catch (e) {
-      alert('Error de red');
+      alert('Network error');
     }
   };
 
@@ -104,7 +104,7 @@ export default function AdminPanel({ token }: AdminPanelProps) {
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
         <ShieldAlert size={24} color="var(--danger)" />
         <h2 style={{ margin: 0, color: 'var(--text-main)', letterSpacing: '1px' }}>
-          Panel de Administración (SOC)
+          User Management Panel (SOC)
         </h2>
       </div>
 
@@ -112,13 +112,13 @@ export default function AdminPanel({ token }: AdminPanelProps) {
         {/* Create User Form */}
         <div className="glass-panel" style={{ padding: '1.5rem' }}>
           <h3 style={{ fontSize: '0.8rem', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <UserPlus size={16} /> Alta de Operador
+            <UserPlus size={16} /> Register Operator
           </h3>
           
           <form onSubmit={handleCreateUser} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             <input 
               type="text" 
-              placeholder="Nombre de Usuario" 
+              placeholder="Username" 
               className="input-field" 
               value={newUsername} 
               onChange={e => setNewUsername(e.target.value)} 
@@ -126,7 +126,7 @@ export default function AdminPanel({ token }: AdminPanelProps) {
             />
             <input 
               type="password" 
-              placeholder="Contraseña" 
+              placeholder="Password" 
               className="input-field" 
               value={newPassword} 
               onChange={e => setNewPassword(e.target.value)} 
@@ -137,33 +137,33 @@ export default function AdminPanel({ token }: AdminPanelProps) {
               value={newRole} 
               onChange={e => setNewRole(e.target.value)}
             >
-              <option value="monitor">Monitor (Personalizado)</option>
-              <option value="admin">Administrador (Control Total)</option>
+              <option value="monitor">Monitor (Custom Permissions)</option>
+              <option value="admin">Administrator (Full Control)</option>
             </select>
 
-            {/* Matrix de Permisos */}
+            {/* Permissions Matrix */}
             {newRole !== 'admin' && (
               <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.8rem', borderRadius: '6px', fontSize: '0.8rem' }}>
-                <div style={{ color: '#8b949e', marginBottom: '0.5rem', fontWeight: 600 }}>Permisos Granulares:</div>
+                <div style={{ color: '#8b949e', marginBottom: '0.5rem', fontWeight: 600 }}>Granular Permissions:</div>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem', cursor: 'pointer' }}>
                   <input type="checkbox" checked={canCreateChats} onChange={e => setCanCreateChats(e.target.checked)} />
-                  Crear Hilos de Chat
+                  Create Chats
                 </label>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem', cursor: 'pointer' }}>
                   <input type="checkbox" checked={canDeleteChats} onChange={e => setCanDeleteChats(e.target.checked)} />
-                  Borrar Hilos de Chat
+                  Delete Chats
                 </label>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem', cursor: 'pointer' }}>
                   <input type="checkbox" checked={canRenameChats} onChange={e => setCanRenameChats(e.target.checked)} />
-                  Renombrar Hilos de Chat
+                  Rename Chats
                 </label>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem', cursor: 'pointer' }}>
                   <input type="checkbox" checked={canControlHardware} onChange={e => setCanControlHardware(e.target.checked)} />
-                  Controlar Hardware / Alarmas
+                  Hardware / Alarm Control
                 </label>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
                   <input type="checkbox" checked={canManageUsers} onChange={e => setCanManageUsers(e.target.checked)} />
-                  Gestionar Usuarios
+                  Manage Users
                 </label>
               </div>
             )}
@@ -171,7 +171,7 @@ export default function AdminPanel({ token }: AdminPanelProps) {
             {error && <div style={{ color: 'var(--danger)', fontSize: '0.85rem' }}>{error}</div>}
 
             <button type="submit" className="btn btn-primary" disabled={loading}>
-              {loading ? 'Creando...' : 'Registrar Operador'}
+              {loading ? 'Creating...' : 'Register Operator'}
             </button>
           </form>
         </div>
@@ -179,17 +179,17 @@ export default function AdminPanel({ token }: AdminPanelProps) {
         {/* User List */}
         <div className="glass-panel" style={{ padding: '1.5rem' }}>
           <h3 style={{ fontSize: '0.8rem', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Users size={16} /> Operadores Activos
+            <Users size={16} /> Active Operators
           </h3>
           
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid #30363d', textAlign: 'left', color: '#8b949e' }}>
                 <th style={{ padding: '0.8rem' }}>ID</th>
-                <th style={{ padding: '0.8rem' }}>Usuario</th>
-                <th style={{ padding: '0.8rem' }}>Rol</th>
-                <th style={{ padding: '0.8rem' }}>Permisos Específicos</th>
-                <th style={{ padding: '0.8rem' }}>Acciones</th>
+                <th style={{ padding: '0.8rem' }}>User</th>
+                <th style={{ padding: '0.8rem' }}>Role</th>
+                <th style={{ padding: '0.8rem' }}>Specific Permissions</th>
+                <th style={{ padding: '0.8rem' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -215,11 +215,11 @@ export default function AdminPanel({ token }: AdminPanelProps) {
                       <span style={{ color: 'var(--primary)' }}>Full Access</span>
                     ) : (
                       <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
-                        {u.can_create_chats && <span className="badge">Crear</span>}
-                        {u.can_delete_chats && <span className="badge">Borrar</span>}
-                        {u.can_rename_chats && <span className="badge">Renombrar</span>}
+                        {u.can_create_chats && <span className="badge">Create</span>}
+                        {u.can_delete_chats && <span className="badge">Delete</span>}
+                        {u.can_rename_chats && <span className="badge">Rename</span>}
                         {u.can_control_hardware && <span className="badge">Hardware</span>}
-                        {!u.can_create_chats && !u.can_delete_chats && !u.can_rename_chats && !u.can_control_hardware && <span>Lectura</span>}
+                        {!u.can_create_chats && !u.can_delete_chats && !u.can_rename_chats && !u.can_control_hardware && <span>Read-Only</span>}
                       </div>
                     )}
                   </td>

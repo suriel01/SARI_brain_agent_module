@@ -29,12 +29,12 @@ export default function PinModal({ isOpen, onClose, onSubmit, actionName }: PinM
         </button>
         
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '1.5rem' }}>
-          <div style={{ background: 'var(--danger-glow)', padding: '1rem', borderRadius: '50%', marginBottom: '1rem' }}>
-            <KeyRound size={28} color="var(--danger)" />
+          <div style={{ background: 'rgba(255, 255, 255, 0.08)', padding: '1rem', borderRadius: '50%', marginBottom: '1rem', border: '1px solid #334155' }}>
+            <KeyRound size={28} color="#f1f5f9" />
           </div>
-          <h3 style={{ fontSize: '1.2rem', color: 'var(--danger)' }}>Confirmación de Seguridad</h3>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center', marginTop: '0.5rem' }}>
-            Acción crítica requerida: <br/><strong style={{color: 'var(--text-main)'}}>{actionName}</strong>
+          <h3 style={{ fontSize: '1.1rem', color: '#f1f5f9' }}>Confirmación de Seguridad</h3>
+          <p style={{ color: '#94a3b8', fontSize: '0.85rem', textAlign: 'center', marginTop: '0.5rem' }}>
+            Acción autorizada requerida: <br/><strong style={{color: '#f1f5f9'}}>{actionName}</strong>
           </p>
         </div>
 
@@ -50,7 +50,7 @@ export default function PinModal({ isOpen, onClose, onSubmit, actionName }: PinM
             autoFocus
             required
           />
-          <button type="submit" className="btn btn-danger" style={{ width: '100%' }}>
+          <button type="submit" style={{ width: '100%', background: '#0284c7', color: '#ffffff', border: '1px solid #0284c7', padding: '0.65rem', borderRadius: '8px', fontWeight: 600, cursor: 'pointer' }}>
             Autorizar Acción
           </button>
         </form>

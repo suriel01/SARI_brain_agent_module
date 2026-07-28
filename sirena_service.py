@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """
-sirena_service.py — Microservicio HTTP de Alarma Física & Respuesta Auditiva SARI.
+sirena_service.py — Microservicio HTTP de Alarma Física & Sirena de Emergencia Real SARI.
 
 Escucha en 0.0.0.0:5000.
-Reproduce alertas de voz sintética a través de los altavoces mediante espeak-ng/spd-say.
+Genera y reproduce un tono físico real de sirena de emergencia (onda modulada de alta intensidad) por altavoces.
 """
 
+import os
+import wave
+import math
+import struct
 import json
 import subprocess
 import threading
@@ -14,10 +18,43 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 
 PORT = 5000
 BIND = "0.0.0.0"
+WAV_PATH = "/tmp/sirena_emergencia.wav"
 
 _sirena_activa = False
 _sirena_lock = threading.Lock()
 _active_processes = []
+
+
+def _generar_wav_sirena_si_no_existe():
+    """Genera un archivo WAV de sirena de emergencia real (barrido de frecuencia 600Hz-1600Hz)."""
+    if os.path.exists(WAV_PATH):
+        return
+
+    sample_rate = 22050
+    duration = 2.0  # Ciclo de 2 segundos de oscilación aguda
+    num_samples = int(sample_rate * duration)
+
+    try:
+        with wave.open(WAV_PATH, 'w') as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(sample_rate)
+
+            phase = 0.0
+            for i in range(num_samples):
+                t = i / sample_rate
+                # Sweep estilo alarma de pánico (frecuencia entre 600Hz y 1600Hz)
+                sweep = math.sin(2 * math.pi * 1.5 * t)
+                freq = 1100 + 500 * sweep
+                phase += 2 * math.pi * freq / sample_rate
+
+                # Tono con armónicos para sonar metálico/agudo como sirena real
+                sample = int(26000 * math.sin(phase) + 5000 * math.sin(2 * phase))
+                sample = max(-32767, min(32767, sample))
+                wav_file.writeframes(struct.pack('<h', sample))
+        print(f"[SIRENA] Tono de sirena real generado exitosamente en {WAV_PATH}")
+    except Exception as e:
+        print(f"[SIRENA] Error generando WAV de sirena: {e}")
 
 
 def _detener_procesos_audio():
@@ -26,48 +63,52 @@ def _detener_procesos_audio():
         for proc in _active_processes:
             try:
                 proc.terminate()
+                proc.kill()
             except Exception:
                 pass
         _active_processes.clear()
 
 
-def _play_audio_command(cmd_list):
-    try:
-        proc = subprocess.Popen(cmd_list, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        with _sirena_lock:
-            _active_processes.append(proc)
-        proc.wait()
-    except Exception as e:
-        print(f"[SIRENA] Error ejecutando comando de audio {cmd_list[0]}: {e}")
+def _play_siren_cycle():
+    """Ejecuta una reproducción del tono WAV con aplay o paplay."""
+    _generar_wav_sirena_si_no_existe()
+    for player in ["aplay", "paplay"]:
+        try:
+            proc = subprocess.Popen([player, WAV_PATH], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            with _sirena_lock:
+                _active_processes.append(proc)
+            proc.wait()
+            return
+        except Exception:
+            continue
 
 
 def _reproducir_alerta(duracion: int):
-    """Reproduce la alerta sonora usando el sintetizador de voz (espeak-ng/spd-say)."""
+    """Reproduce el tono real de sirena de emergencia en bucle continuo durante la duración especificada."""
     global _sirena_activa
     with _sirena_lock:
         _sirena_activa = True
 
     _detener_procesos_audio()
-    print(f"[SIRENA] 🚨 Alarma activada por {duracion} segundos.")
+    print(f"[SIRENA] 🚨 ALARMA DE SIRENA REAL ACTIVADA por {duracion} segundos.")
 
-    def _loop_anuncio():
+    def _loop_sirena():
+        global _sirena_activa
         t_start = time.time()
-        mensaje = f"Alerta de seguridad SARI. Intrusión detectada. Sirena activa por {duracion} segundos."
-        
+
         while True:
             with _sirena_lock:
                 if not _sirena_activa or (time.time() - t_start >= duracion):
                     break
-            
-            # Anuncio de voz
-            _play_audio_command(["espeak-ng", "-v", "es", "-s", "145", mensaje])
-            time.sleep(1)
+
+            # Reproducir un ciclo del sonido de la sirena
+            _play_siren_cycle()
 
         with _sirena_lock:
             _sirena_activa = False
-        print("[SIRENA] ⏹️ Alarma finalizada automáticamente.")
+        print("[SIRENA] ⏹️ Alarma de sirena finalizada.")
 
-    threading.Thread(target=_loop_anuncio, daemon=True).start()
+    threading.Thread(target=_loop_sirena, daemon=True).start()
 
 
 def _desactivar_alerta():
@@ -75,10 +116,9 @@ def _desactivar_alerta():
     global _sirena_activa
     with _sirena_lock:
         _sirena_activa = False
-    
+
     _detener_procesos_audio()
     print("[SIRENA] 🔊 Sirena desactivada manualmente.")
-    threading.Thread(target=lambda: _play_audio_command(["espeak-ng", "-v", "es", "Sirena desactivada."]), daemon=True).start()
 
 
 class SirenaHTTPHandler(BaseHTTPRequestHandler):
@@ -133,6 +173,7 @@ class SirenaHTTPHandler(BaseHTTPRequestHandler):
 
 
 def iniciar_servicio():
+    _generar_wav_sirena_si_no_existe()
     server = HTTPServer((BIND, PORT), SirenaHTTPHandler)
     print(f"[SIRENA] Servicio de audio escuchando en http://{BIND}:{PORT}")
     try:

@@ -21,9 +21,11 @@ def login(req: schemas.LoginRequest, db: Session = Depends(get_db)):
     expires = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     token_data = {
         "sub": user.username,
+        "username": user.username,
         "role": user.role,
         "exp": expires,
         "id": user.id,
+        "clearance_level": user.clearance_level,
         "can_create_chats": user.can_create_chats or (user.role == "admin"),
         "can_delete_chats": user.can_delete_chats or (user.role == "admin"),
         "can_rename_chats": user.can_rename_chats or (user.role == "admin"),
@@ -32,4 +34,7 @@ def login(req: schemas.LoginRequest, db: Session = Depends(get_db)):
     }
     access_token = jwt.encode(token_data, SECRET_KEY, algorithm=ALGORITHM)
     
+    from .hardware import HardwareState
+    HardwareState.add_log(f"🔑 User [{user.username}] ({user.role.upper()}) logged in successfully", level="INFO", camera_module="AUTH_SYS")
+
     return {"access_token": access_token, "token_type": "bearer", "role": user.role}
