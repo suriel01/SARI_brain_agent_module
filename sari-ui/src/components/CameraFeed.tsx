@@ -3,8 +3,9 @@ import { RotateCw, FlipHorizontal, FlipVertical, Maximize2, Minimize2, RefreshCc
 
 export default function CameraFeed() {
   const [fps, setFps] = useState(30);
-  const [streamUrl, setStreamUrl] = useState('http://192.168.1.73:8080/video_feed');
+  const [streamUrl, setStreamUrl] = useState('http://192.168.55.1:8080/mjpeg');
   const [streamError, setStreamError] = useState(false);
+  const [showUrlEdit, setShowUrlEdit] = useState(false);
   const activeCam = 'Jetson-PTZ_1';
 
   // Dynamic Orientation & Fullscreen State (Default 180° for upside down stream fix)
@@ -55,53 +56,43 @@ export default function CameraFeed() {
   };
 
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center' }}>
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', gap: '0.8rem', alignItems: 'center' }}>
       
-      {/* Feed Header */}
-      <div style={{ width: '100%', maxWidth: '1100px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(19, 21, 28, 0.88)', padding: '0.6rem 1rem', borderRadius: '8px', border: '1px solid #2d323e' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-          <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#f1f5f9' }}>Live Perception ({activeCam})</span>
-        </div>
-
-        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
-          <span style={{ fontSize: '0.75rem', background: 'rgba(255, 255, 255, 0.05)', border: '1px solid #334155', padding: '0.2rem 0.5rem', borderRadius: '4px', color: '#94a3b8', fontWeight: 600 }}>
-            Transmisión Cámara Hikvision
+      {/* Clean Feed Header */}
+      <div style={{ width: '100%', maxWidth: '1100px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(19, 21, 28, 0.88)', padding: '0.65rem 1.2rem', borderRadius: '8px', border: '1px solid #2d323e' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+          <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#f1f5f9' }}>Live Perception ({activeCam})</span>
+          <span style={{ fontSize: '0.72rem', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '0.15rem 0.5rem', borderRadius: '4px', color: '#10b981', fontWeight: 600 }}>
+            MJPEG Stream
           </span>
-          <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{fps} FPS</span>
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center' }}>
+          <button 
+            onClick={() => setShowUrlEdit(prev => !prev)} 
+            style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '0.75rem', cursor: 'pointer', textDecoration: 'underline' }}
+          >
+            {showUrlEdit ? 'Ocultar URL' : 'Configurar URL'}
+          </button>
+          <span style={{ fontSize: '0.75rem', color: '#94a3b8', background: 'rgba(255, 255, 255, 0.04)', padding: '0.2rem 0.5rem', borderRadius: '4px', border: '1px solid #2d323e' }}>
+            {fps} FPS
+          </span>
         </div>
       </div>
 
-      {/* Stream Source URL Bar */}
-      <div style={{ width: '100%', maxWidth: '1100px', display: 'flex', gap: '0.5rem', alignItems: 'center', backgroundColor: 'rgba(19, 21, 28, 0.88)', padding: '0.5rem 0.8rem', borderRadius: '6px', border: '1px solid #2d323e' }}>
-        <span style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: 500 }}>URL Stream Jetson:</span>
-        <input 
-          type="text" 
-          value={streamUrl} 
-          onChange={e => { setStreamUrl(e.target.value); setStreamError(false); }}
-          style={{ flex: 1, background: '#090a0f', border: '1px solid #2d323e', color: '#f1f5f9', padding: '0.3rem 0.6rem', borderRadius: '4px', fontSize: '0.8rem', outline: 'none' }}
-          placeholder="http://192.168.1.73:8080/mjpeg"
-        />
-        <div style={{ display: 'flex', gap: '0.3rem' }}>
-          {['http://192.168.1.73:8080/mjpeg', 'http://192.168.1.73:8080/video_feed', 'http://192.168.55.1:8080/mjpeg'].map((preset, i) => (
-            <button
-              key={i}
-              onClick={() => { setStreamUrl(preset); setStreamError(false); }}
-              style={{
-                background: streamUrl === preset ? '#0284c7' : 'rgba(255, 255, 255, 0.04)',
-                border: `1px solid ${streamUrl === preset ? '#0284c7' : '#2d323e'}`,
-                color: streamUrl === preset ? '#ffffff' : '#94a3b8',
-                padding: '0.25rem 0.5rem',
-                borderRadius: '4px',
-                fontSize: '0.7rem',
-                cursor: 'pointer',
-                fontWeight: streamUrl === preset ? 600 : 400
-              }}
-            >
-              {preset.split('/').pop()}
-            </button>
-          ))}
+      {/* Optional Compact Stream Source URL Bar (Hidden by default for clean UI) */}
+      {showUrlEdit && (
+        <div style={{ width: '100%', maxWidth: '1100px', display: 'flex', gap: '0.5rem', alignItems: 'center', backgroundColor: 'rgba(19, 21, 28, 0.88)', padding: '0.4rem 0.8rem', borderRadius: '6px', border: '1px solid #2d323e' }}>
+          <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 500 }}>URL Stream MJPEG:</span>
+          <input 
+            type="text" 
+            value={streamUrl} 
+            onChange={e => { setStreamUrl(e.target.value); setStreamError(false); }}
+            style={{ flex: 1, background: '#090a0f', border: '1px solid #2d323e', color: '#f1f5f9', padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.78rem', outline: 'none' }}
+            placeholder="http://192.168.55.1:8080/mjpeg"
+          />
         </div>
-      </div>
+      )}
 
       {/* Main Video Viewport (Con soporte de Pantalla Completa y Orientación Dinámica) */}
       <div 
