@@ -1,32 +1,39 @@
 import { useState } from 'react';
-import { BellRing, Lock, Search, Filter, Clock } from 'lucide-react';
+import { BellRing, Lock, Search, Filter, Clock, Download, Trash2, Expand, Minimize2 } from 'lucide-react';
 import RadarMap from './RadarMap';
 import Telemetry from './Telemetry';
-import CameraControl from './CameraControl';
+import NodeStatus from './NodeStatus';
+import { apiFetch, readErrorDetail } from '../api';
+import type { Permissions } from '../permissions';
 
 interface HardwarePanelProps {
   token: string;
-  role: string;
+  permissions: Permissions;
   requestPin: (actionName: string, callback: (pin: string) => void) => void;
   state: any;
   fetchState: () => void;
 }
 
-const API_BASE = 'http://localhost:7000/api';
-
-export default function HardwarePanel({ token, role, requestPin, state, fetchState }: HardwarePanelProps) {
+export default function HardwarePanel({ token, permissions, requestPin, state, fetchState }: HardwarePanelProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [levelFilter, setLevelFilter] = useState('ALL');
   const [moduleFilter, setModuleFilter] = useState('ALL');
+  const [isLogsExpanded, setIsLogsExpanded] = useState(false);
   
   const handleManualAction = (actionName: string) => {
+    if (!permissions.canControlHardware) {
+      alert('Permission denied: Hardware control required.');
+      return;
+    }
     requestPin(actionName, async (pin) => {
       try {
-        await fetch(`${API_BASE}/manual_action`, {
+        const res = await apiFetch('/manual_action', token, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ action: actionName, pin })
         });
+        if (!res.ok) {
+          alert(await readErrorDetail(res, 'Error executing hardware action.'));
+        }
         fetchState();
       } catch (e) {
         console.error('Error executing manual action', e);
@@ -53,6 +60,11 @@ export default function HardwarePanel({ token, role, requestPin, state, fetchSta
       if (!matchMsg && !matchMod && !matchLevel && !matchTs) return false;
     }
 
+    if (log.expires_at) {
+      const exp = new Date(String(log.expires_at).replace(' ', 'T'));
+      if (!Number.isNaN(exp.getTime()) && exp.getTime() <= Date.now()) return false;
+    }
+
     return true;
   });
 
@@ -72,8 +84,8 @@ export default function HardwarePanel({ token, role, requestPin, state, fetchSta
         </div>
 
         <div className="glass-panel" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-           <h3 style={{ fontSize: '0.8rem', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '1rem', alignSelf: 'flex-start' }}>PTZ Camera Control</h3>
-           <CameraControl />
+           <h3 style={{ fontSize: '0.8rem', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '0', alignSelf: 'flex-start' }}>Hardware Node Status</h3>
+           <NodeStatus />
         </div>
       </div>
 
@@ -88,15 +100,15 @@ export default function HardwarePanel({ token, role, requestPin, state, fetchSta
             onClick={() => handleManualAction('toggle_sirena')}
             style={{ 
               padding: '1rem', 
-              opacity: role === 'admin' ? 1 : 0.5, 
-              cursor: role === 'admin' ? 'pointer' : 'not-allowed',
+              opacity: permissions.canControlHardware ? 1 : 0.5, 
+              cursor: permissions.canControlHardware ? 'pointer' : 'not-allowed',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               gap: '0.6rem',
               fontWeight: 600
             }}
-            disabled={role !== 'admin'}
+            disabled={!permissions.canControlHardware}
           >
             <BellRing size={18} /> {state?.siren_active ? 'Siren (Active - Click to Deactivate)' : 'Siren (Off - Click to Activate)'}
           </button>
@@ -107,8 +119,8 @@ export default function HardwarePanel({ token, role, requestPin, state, fetchSta
             onClick={() => handleManualAction('toggle_accesos')}
             style={{ 
               padding: '1rem', 
-              opacity: role === 'admin' ? 1 : 0.5, 
-              cursor: role === 'admin' ? 'pointer' : 'not-allowed',
+              opacity: permissions.canControlHardware ? 1 : 0.5, 
+              cursor: permissions.canControlHardware ? 'pointer' : 'not-allowed',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -117,7 +129,7 @@ export default function HardwarePanel({ token, role, requestPin, state, fetchSta
               border: state?.gates_locked ? '1px solid #eab308' : '1px solid #30363d',
               color: state?.gates_locked ? '#eab308' : '#c9d1d9'
             }}
-            disabled={role !== 'admin'}
+            disabled={!permissions.canControlHardware}
           >
             <Lock size={18} /> {state?.gates_locked ? 'Gates Locked (Click to Unlock)' : 'Lock Gates (Click to Lock)'}
           </button>
@@ -205,10 +217,47 @@ export default function HardwarePanel({ token, role, requestPin, state, fetchSta
               <option value="AUTH_SYS">AUTH_SYS</option>
               <option value="JETSON_CV">JETSON_CV</option>
             </select>
+            
+            {/* Export and Clear buttons */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginLeft: 'auto' }}>
+              <button 
+                onClick={() => {
+                  const blob = new Blob([JSON.stringify(filteredLogs, null, 2)], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `sari_event_logs_${new Date().toISOString().split('T')[0]}.json`;
+                  a.click();
+                }}
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #30363d', color: '#c9d1d9', padding: '0.4rem 0.6rem', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontSize: '0.75rem' }}
+                title="Export Logs"
+              >
+                <Download size={14} /> Export
+              </button>
+              
+              <button
+                onClick={() => alert("Función 'Clear Logs' requiere persistencia en la base de datos (por implementar).")}
+                style={{ background: 'rgba(255,0,0,0.1)', border: '1px solid rgba(255,0,0,0.2)', color: '#ff4444', padding: '0.4rem 0.6rem', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontSize: '0.75rem' }}
+                title="Clear Logs"
+              >
+                <Trash2 size={14} /> Clear
+              </button>
+            </div>
           </div>
         </div>
 
+        {/* Expand / Collapse Control */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.5rem' }}>
+          <button 
+            onClick={() => setIsLogsExpanded(!isLogsExpanded)}
+            style={{ background: 'transparent', border: 'none', color: '#58a6ff', fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+          >
+            {isLogsExpanded ? <><Minimize2 size={12} /> Mostrar recientes (20)</> : <><Expand size={12} /> Expandir todos ({filteredLogs.length})</>}
+          </button>
+        </div>
+
         {/* Logs Table */}
+        <div style={{ maxHeight: isLogsExpanded ? 'none' : '400px', overflowY: 'auto', border: '1px solid #30363d', borderRadius: '6px' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid #30363d', textAlign: 'left', color: '#8b949e' }}>
@@ -220,7 +269,7 @@ export default function HardwarePanel({ token, role, requestPin, state, fetchSta
             </tr>
           </thead>
           <tbody>
-            {filteredLogs.map((log: any, idx: number) => (
+            {(isLogsExpanded ? filteredLogs : filteredLogs.slice(0, 20)).map((log: any, idx: number) => (
               <tr key={idx} style={{ borderBottom: '1px solid rgba(48, 54, 61, 0.5)' }}>
                 <td style={{ padding: '0.8rem', color: '#c9d1d9', opacity: 0.8, whiteSpace: 'nowrap' }}>{log.timestamp}</td>
                 <td style={{ padding: '0.8rem' }}>
@@ -229,8 +278,8 @@ export default function HardwarePanel({ token, role, requestPin, state, fetchSta
                     borderRadius: '4px', 
                     fontSize: '0.75rem',
                     fontWeight: 600,
-                    background: log.level === 'WARN' ? 'rgba(234, 179, 8, 0.15)' : log.level === 'ERROR' ? 'rgba(255, 0, 60, 0.15)' : 'rgba(255, 51, 102, 0.15)',
-                    color: log.level === 'WARN' ? '#eab308' : log.level === 'ERROR' ? '#ff003c' : 'var(--primary)'
+                    background: log.level === 'WARN' ? 'rgba(234, 179, 8, 0.15)' : log.level === 'ERROR' ? 'rgba(255, 0, 60, 0.15)' : 'rgba(88, 166, 255, 0.15)',
+                    color: log.level === 'WARN' ? '#eab308' : log.level === 'ERROR' ? '#ff003c' : '#58a6ff'
                   }}>
                     {log.level}
                   </span>
@@ -257,6 +306,7 @@ export default function HardwarePanel({ token, role, requestPin, state, fetchSta
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
     </div>
