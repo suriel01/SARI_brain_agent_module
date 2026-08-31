@@ -57,6 +57,34 @@ def save_event_and_embedding(module_name: str, event_desc: str, confidence: floa
         db.close()
 
 
+import time
+
+@router.get("/event")
+@router.get("/event/")
+@router.get("/")
+@router.get("")
+def get_alerts_status_and_logs(db: Session = Depends(get_db)):
+    """Endpoint GET para consultar el estado del receptor de alertas y ver el historial de detecciones."""
+    db_events = db.query(models.EventLog).order_by(models.EventLog.timestamp.desc()).limit(20).all()
+    events_list = [
+        {
+            "id": ev.id,
+            "timestamp": ev.timestamp.strftime("%Y-%m-%d %H:%M:%S") if ev.timestamp else None,
+            "module_name": ev.module_name,
+            "event_description": ev.event_description,
+            "confidence": ev.confidence
+        }
+        for ev in db_events
+    ]
+    return {
+        "status": "online",
+        "endpoint": "POST /api/alerts/event",
+        "info": "El receptor de alertas SARI está activo. Para registrar una intrusión, envíe un HTTP POST con el payload JSON de la Jetson.",
+        "recent_detections_count": len(events_list),
+        "recent_detections": events_list
+    }
+
+
 @router.post("/event")
 @router.post("/event/")
 @router.post("/")
@@ -87,12 +115,30 @@ def receive_alert_event(req: AlertEventRequest, background_tasks: BackgroundTask
     evidence_text = f"⚠️ ALERTA DE EVIDENCIA DESDE MÓDULO JETSON [{timestamp_str}]:\n• Dispositivo: {module_clean}\n• Tipo: {req.event_type} ({req.severity})\n• Evento: {req.message}\n• Confianza CV: {int(conf*100)}%"
     crud.add_message(db, thread.id, role="system", content=evidence_text)
 
+    # Registrar inmediatamente en los logs de auditoría del SOC (Hardware Control)
+    log_level = "ERROR" if req.severity == "high" or req.event_type == "intrusion" else "WARN" if req.severity == "medium" else "INFO"
+    HardwareState.add_log(
+        msg=f"🚨 [{module_clean}] {req.message} (Conf: {int(conf*100)}%)",
+        level=log_level,
+        camera_module="JETSON_CV"
+    )
+
     siren_response = None
     if req.event_type == "intrusion" and conf >= 0.70:
+        HardwareState.siren_active = True
+        HardwareState.alert_count += 1
+        HardwareState.last_alert_time = time.time()
+        
         siren_response = execute_physical_tool("activar_sirena", {"duracion_segundos": 30})
         crud.add_message(db, thread.id, role="system", content="🔊 Respuesta física iniciada: Sirena activada por 30s mediante orden automática.")
+        
         # Broadcast the siren state to React via Websocket
-        background_tasks.add_task(manager.broadcast_json, {"event": "siren_activated", "camara_id": module_clean, "severity": req.severity})
+        background_tasks.add_task(manager.broadcast_json, {
+            "event": "siren_activated",
+            "camara_id": module_clean,
+            "severity": req.severity,
+            "thread_id": thread.id
+        })
 
     # Tarea en segundo plano para guardar vector de memoria
     background_tasks.add_task(save_event_and_embedding, module_clean, req.message, conf)
@@ -103,3 +149,4 @@ def receive_alert_event(req: AlertEventRequest, background_tasks: BackgroundTask
         "evidence_log": evidence_text,
         "siren_result": siren_response
     }
+
