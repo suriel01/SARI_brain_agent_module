@@ -67,7 +67,6 @@ import time
 @router.get("/event")
 @router.get("/event/")
 @router.get("/")
-@router.get("")
 def get_alerts_status_and_logs(db: Session = Depends(get_db)):
     """Endpoint GET para consultar el estado del receptor de alertas y ver el historial de detecciones."""
     db_events = db.query(models.EventLog).order_by(models.EventLog.timestamp.desc()).limit(20).all()
@@ -99,7 +98,6 @@ def get_alerts_status_and_logs(db: Session = Depends(get_db)):
 @router.post("/alerta")
 @router.post("/alertas")
 @router.post("/")
-@router.post("")
 def receive_alert_event(req: AlertEventRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     admin_user = crud.get_user_by_username(db, "admin")
     user_id = admin_user.id if admin_user else 1

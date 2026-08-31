@@ -83,7 +83,6 @@ app.include_router(alerts.router, prefix="/api/alerts", tags=["alerts"])
 app.include_router(alerts.router, prefix="/api/alert", tags=["alerts"])
 app.include_router(alerts.router, prefix="/api", tags=["alerts"])
 app.include_router(alerts.router, prefix="/alerts", tags=["alerts"])
-app.include_router(alerts.router, prefix="", tags=["alerts"])
 app.include_router(hardware.router, prefix="/api/hardware", tags=["hardware"])
 app.include_router(hardware.router, prefix="/api", tags=["hardware"])
 
