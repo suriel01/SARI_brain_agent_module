@@ -93,19 +93,22 @@ export default function Dashboard({ token, role, permissions, onLogout }: Dashbo
     };
   }, [isResizingModules]);
 
-  // Web Audio API Siren Fallback
+  // Web Audio API Siren Fallback & Browser Audio Unlock
   useEffect(() => {
     if (state?.siren_active) {
       try {
         const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
         osc.type = 'sawtooth';
-        gain.gain.value = 0.15;
+        gain.gain.value = 0.25;
         
         const now = audioCtx.currentTime;
         osc.frequency.setValueAtTime(700, now);
-        for (let i = 0; i < 40; i++) {
+        for (let i = 0; i < 60; i++) {
           osc.frequency.linearRampToValueAtTime(1400, now + i * 0.7 + 0.35);
           osc.frequency.linearRampToValueAtTime(700, now + i * 0.7 + 0.7);
         }
@@ -123,6 +126,7 @@ export default function Dashboard({ token, role, permissions, onLogout }: Dashbo
       }
     }
   }, [state?.siren_active]);
+
 
   const requestPin = (actionName: string, callback: (pin: string) => void) => {
     setPendingAction(actionName);

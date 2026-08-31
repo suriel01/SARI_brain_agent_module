@@ -227,6 +227,33 @@ export default function ChatPanel({ token, permissions, requestPin, fetchState, 
     return () => clearInterval(interval);
   }, [token]);
 
+  // WebSocket Listener directo en ChatPanel para mensajería en tiempo real (Estilo WhatsApp)
+  useEffect(() => {
+    const wsUrl = window.location.hostname === 'localhost' ? 'ws://localhost:8000/ws' : `ws://${window.location.hostname}:8000/ws`;
+    const ws = new WebSocket(wsUrl);
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        console.log("ChatPanel WS event received:", data);
+
+        // Si llega una nueva alerta o mensaje de evidencia
+        if (data.thread_id) {
+          fetchThreads().then(() => {
+            setActiveThreadId(data.thread_id);
+            fetchMessages(data.thread_id);
+          });
+        } else if (activeThreadId) {
+          fetchMessages(activeThreadId);
+        }
+      } catch (e) {
+        console.error("Error en WS de ChatPanel:", e);
+      }
+    };
+
+    return () => ws.close();
+  }, [activeThreadId]);
+
   useEffect(() => {
     if (activeThreadId) {
       isSwitchingThreadRef.current = true;
@@ -734,15 +761,17 @@ export default function ChatPanel({ token, permissions, requestPin, fetchState, 
                   {renderFormattedContent(msg.content)}
 
                   {msg.snapshot && (
-                    <div style={{ marginTop: '0.65rem', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(239, 68, 68, 0.4)', maxWidth: '380px', boxShadow: '0 4px 14px rgba(0, 0, 0, 0.45)', background: '#090a0f' }}>
+                    <div style={{ marginTop: '0.65rem', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(239, 68, 68, 0.4)', maxWidth: '420px', boxShadow: '0 4px 14px rgba(0, 0, 0, 0.5)', background: '#090a0f' }}>
                       <div style={{ background: 'rgba(239, 68, 68, 0.2)', padding: '0.35rem 0.65rem', fontSize: '0.72rem', color: '#fca5a5', fontFamily: 'monospace', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.4rem', borderBottom: '1px solid rgba(239, 68, 68, 0.25)' }}>
                         <span>📸 Evidencia Capturada — YOLO26n</span>
                       </div>
-                      <img 
-                        src={msg.snapshot} 
-                        alt="Captura Intruso" 
-                        style={{ width: '100%', height: 'auto', display: 'block', objectFit: 'cover' }}
-                      />
+                      <div style={{ background: '#090a0f', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '120px', maxHeight: '340px', overflow: 'hidden' }}>
+                        <img 
+                          src={msg.snapshot} 
+                          alt="Captura Intruso" 
+                          style={{ maxWidth: '100%', maxHeight: '340px', objectFit: 'contain', display: 'block' }}
+                        />
+                      </div>
                     </div>
                   )}
 
