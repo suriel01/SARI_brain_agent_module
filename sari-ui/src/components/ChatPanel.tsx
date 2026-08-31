@@ -19,6 +19,19 @@ interface Message {
   snapshot?: string;
 }
 
+const formatMessageTimestamp = (dateStr?: string) => {
+  if (!dateStr) return '';
+  let iso = dateStr;
+  if (!iso.endsWith('Z') && !iso.includes('+') && !iso.includes('-') && iso.includes('T')) {
+    iso = `${iso}Z`;
+  } else if (!iso.includes('T') && iso.includes(' ')) {
+    iso = `${iso.replace(' ', 'T')}Z`;
+  }
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return dateStr;
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
+};
+
 const formatInlineText = (text: string) => {
   const parts = text.split(/(\*\*.*?\*\*|`.*?`)/g);
   return parts.map((part, i) => {
@@ -777,7 +790,7 @@ export default function ChatPanel({ token, permissions, requestPin, fetchState, 
 
                   {(msg.timestamp || msg.created_at) && (
                     <div style={{ fontSize: '0.68rem', color: '#94a3b8', marginTop: '0.4rem', textAlign: msg.role === 'user' ? 'right' : 'left', opacity: 0.75, display: 'flex', alignItems: 'center', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start', gap: '0.3rem' }}>
-                      <span>{new Date(msg.timestamp || msg.created_at!).toLocaleString()}</span>
+                      <span>{formatMessageTimestamp(msg.timestamp || msg.created_at)}</span>
                     </div>
                   )}
                 </div>

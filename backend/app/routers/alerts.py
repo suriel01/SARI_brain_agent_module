@@ -119,7 +119,14 @@ def receive_alert_event(req: AlertEventRequest, background_tasks: BackgroundTask
     
     HardwareState.last_alert_thread_id = thread.id
     
-    timestamp_str = datetime.datetime.now().strftime("%H:%M:%S")
+    # Obtener hora local (America/Mexico_City / UTC-6)
+    try:
+        import zoneinfo
+        local_now = datetime.datetime.now(zoneinfo.ZoneInfo("America/Mexico_City"))
+    except Exception:
+        local_now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-6)))
+    
+    timestamp_str = local_now.strftime("%I:%M:%S %p")
     
     # Resolver nivel de confianza
     conf = req.confidence

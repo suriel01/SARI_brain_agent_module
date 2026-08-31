@@ -18,6 +18,11 @@ services:
       - OPENAI_API_BASE=http://host.docker.internal:11434/v1
       - OPENAI_BASE_URL=http://host.docker.internal:11434/v1
       - OPENAI_API_KEY=ollama
+      - SARI_SECRET_KEY=SARI_SUPER_SECRET_KEY
+      - SARI_SECURITY_PIN=1234
+      - SARI_TOKEN_EXPIRE_MINUTES=720
+      - CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+      - TZ=America/Mexico_City
     depends_on:
       postgres_db:
         condition: service_healthy
