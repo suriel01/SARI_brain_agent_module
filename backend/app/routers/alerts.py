@@ -14,15 +14,17 @@ router = APIRouter()
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/chat")
 OLLAMA_EMBED_URL = OLLAMA_URL.replace("/api/chat", "/api/embeddings")
-OLLAMA_EMBED_MODEL = "nomic-embed-text" # O qwen2.5-coder:14b si soporta embeddings, asumo nomic
+OLLAMA_EMBED_MODEL = "nomic-embed-text"
 
 class AlertEventRequest(BaseModel):
-    module_name: str = "Jetson-CV-Node"
-    event: str = "Detección perimetral"
-    confidence: Optional[float] = 0.95
-    auto_siren: Optional[bool] = True
+    camara_id: Optional[str] = "PTZ_1"
+    event_type: str = "intrusion"
+    severity: str = "high"
+    message: str = "Intrusión detectada"
+    metadata: Optional[dict] = {}
 
 from ..models import models
+from ..ws import manager
 
 def save_event_and_embedding(module_name: str, event_desc: str, confidence: float):
     # Generar embedding asíncronamente
@@ -60,14 +62,13 @@ def save_event_and_embedding(module_name: str, event_desc: str, confidence: floa
 @router.post("/")
 @router.post("")
 def receive_alert_event(req: AlertEventRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    # Buscar usuario admin maestro para asignar el hilo
     admin_user = crud.get_user_by_username(db, "admin")
     user_id = admin_user.id if admin_user else 1
 
-    module_clean = (req.module_name or "Jetson-CV-Node").strip()
+    module_clean = req.camara_id or "Jetson-PTZ_1"
     target_title = f"🚨 [EVIDENCIA] {module_clean}"
     
-    # Reutilizar el hilo existente del módulo "ojos" o crear uno nuevo si fue borrado
+    # Reutilizar o crear hilo
     thread = db.query(models.ChatThread).filter(
         models.ChatThread.title.ilike(f"%{module_clean}%")
     ).order_by(models.ChatThread.id.desc()).first()
@@ -80,20 +81,21 @@ def receive_alert_event(req: AlertEventRequest, background_tasks: BackgroundTask
         db.refresh(thread)
     
     HardwareState.last_alert_thread_id = thread.id
-
+    
     timestamp_str = datetime.datetime.now().strftime("%H:%M:%S")
-    evidence_text = f"⚠️ ALERTA DE EVIDENCIA DESDE MÓDULO JETSON [{timestamp_str}]:\n• Dispositivo: {module_clean}\n• Evento: {req.event}\n• Confianza CV: {int((req.confidence or 0.9)*100)}%"
+    conf = float(req.metadata.get("confidence", 0.90)) if req.metadata else 0.90
+    evidence_text = f"⚠️ ALERTA DE EVIDENCIA DESDE MÓDULO JETSON [{timestamp_str}]:\n• Dispositivo: {module_clean}\n• Tipo: {req.event_type} ({req.severity})\n• Evento: {req.message}\n• Confianza CV: {int(conf*100)}%"
     crud.add_message(db, thread.id, role="system", content=evidence_text)
 
-    # Reacción Rápida Determinista: Sirena si confidence >= 0.70
     siren_response = None
-    conf = req.confidence if req.confidence is not None else 0.9
-    if req.auto_siren and conf >= 0.70:
+    if req.event_type == "intrusion" and conf >= 0.70:
         siren_response = execute_physical_tool("activar_sirena", {"duracion_segundos": 30})
-        crud.add_message(db, thread.id, role="system", content="🔊 Respuesta física iniciada: Sirena activada por 30s.")
+        crud.add_message(db, thread.id, role="system", content="🔊 Respuesta física iniciada: Sirena activada por 30s mediante orden automática.")
+        # Broadcast the siren state to React via Websocket
+        background_tasks.add_task(manager.broadcast_json, {"event": "siren_activated", "camara_id": module_clean, "severity": req.severity})
 
-    # Disparar background task para memoria táctica
-    background_tasks.add_task(save_event_and_embedding, module_clean, req.event, conf)
+    # Tarea en segundo plano para guardar vector de memoria
+    background_tasks.add_task(save_event_and_embedding, module_clean, req.message, conf)
 
     return {
         "status": "success",

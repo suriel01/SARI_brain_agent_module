@@ -6,16 +6,17 @@ import AdminPanel from './AdminPanel';
 import PinModal from './PinModal';
 import CameraFeed from './CameraFeed';
 import CircuitCanvas from './CircuitCanvas';
+import { apiFetch } from '../api';
+import type { Permissions } from '../permissions';
 
 interface DashboardProps {
   token: string;
   role: string;
+  permissions: Permissions;
   onLogout: () => void;
 }
 
-const API_BASE = 'http://localhost:7000/api';
-
-export default function Dashboard({ token, role, onLogout }: DashboardProps) {
+export default function Dashboard({ token, role, permissions, onLogout }: DashboardProps) {
   const [state, setState] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'chat' | 'perception' | 'hardware' | 'admin'>('chat');
   
@@ -31,9 +32,7 @@ export default function Dashboard({ token, role, onLogout }: DashboardProps) {
 
   const fetchState = async () => {
     try {
-      const res = await fetch(`${API_BASE}/hardware/state`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const res = await apiFetch('/hardware/state', token);
       if (res.ok) {
         const data = await res.json();
         setState(data);
@@ -48,6 +47,25 @@ export default function Dashboard({ token, role, onLogout }: DashboardProps) {
     const interval = setInterval(fetchState, 1200);
     return () => clearInterval(interval);
   }, [token]);
+
+  // WebSocket Listener para alertas en tiempo real
+  useEffect(() => {
+    const wsUrl = window.location.hostname === 'localhost' ? 'ws://localhost:8000/ws' : `ws://${window.location.hostname}:8000/ws`;
+    const ws = new WebSocket(wsUrl);
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.event === 'siren_activated') {
+          console.log("WebSocket Alert: Siren Activated by Jetson!", data);
+          // Forzar la recarga del estado inmediatamente para reflejar la sirena
+          fetchState();
+        }
+      } catch (e) {
+        console.error("Error parsing WS message:", e);
+      }
+    };
+    return () => ws.close();
+  }, []);
 
   // Modules Resizing Effect
   useEffect(() => {
@@ -122,15 +140,14 @@ export default function Dashboard({ token, role, onLogout }: DashboardProps) {
   };
 
   const handleQuickEmergencyAction = (actionName: string) => {
-    if (role !== 'admin') {
-      alert('Permission denied: Administrator role required.');
+    if (!permissions.canControlHardware) {
+      alert('Permission denied: Hardware control required.');
       return;
     }
     requestPin(actionName, async (pin) => {
       try {
-        await fetch(`${API_BASE}/manual_action`, {
+        await apiFetch('/manual_action', token, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ action: actionName, pin })
         });
         fetchState();
@@ -189,7 +206,7 @@ export default function Dashboard({ token, role, onLogout }: DashboardProps) {
               <span style={{ fontSize: '0.9rem' }}>Hardware Control</span>
             </div>
 
-            {role === 'admin' && (
+            {permissions.canManageUsers && (
               <div 
                 onClick={() => setActiveTab('admin')}
                 style={{ marginTop: '0.2rem', padding: '0.55rem 1rem', cursor: 'pointer', borderRadius: '6px', backgroundColor: activeTab === 'admin' ? 'rgba(255, 255, 255, 0.08)' : 'transparent', color: activeTab === 'admin' ? '#f1f5f9' : '#94a3b8', display: 'flex', alignItems: 'center', gap: '0.8rem', fontWeight: activeTab === 'admin' ? 600 : 400, borderLeft: activeTab === 'admin' ? '3px solid #64748b' : '3px solid transparent' }}
@@ -336,13 +353,13 @@ export default function Dashboard({ token, role, onLogout }: DashboardProps) {
         {/* Content Body */}
         <div style={{ flex: 1, overflow: 'hidden' }}>
           {activeTab === 'chat' ? (
-            <ChatPanel token={token} role={role} requestPin={requestPin} fetchState={fetchState} lastAlertThreadId={state?.last_alert_thread_id} />
+            <ChatPanel token={token} permissions={permissions} requestPin={requestPin} fetchState={fetchState} lastAlertThreadId={state?.last_alert_thread_id} />
           ) : activeTab === 'perception' ? (
             <div style={{ padding: '2rem', height: '100%' }}>
               <CameraFeed />
             </div>
           ) : activeTab === 'hardware' ? (
-            <HardwarePanel token={token} role={role} requestPin={requestPin} state={state} fetchState={fetchState} />
+            <HardwarePanel token={token} permissions={permissions} requestPin={requestPin} state={state} fetchState={fetchState} />
           ) : (
             <AdminPanel token={token} />
           )}

@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import engine, SessionLocal
@@ -27,13 +28,27 @@ with engine.connect() as conn:
 
 app = FastAPI(title="SARI Brain Agent Backend")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+_cors_raw = os.environ.get(
+    "CORS_ORIGINS",
+    "http://localhost:5173,http://127.0.0.1:5173",
 )
+CORS_ORIGINS = [origin.strip() for origin in _cors_raw.split(",") if origin.strip()]
+if CORS_ORIGINS == ["*"]:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # Seed Admin User y Hilo Inicial
 @app.on_event("startup")
@@ -68,18 +83,33 @@ app.include_router(alerts.router, prefix="/api/alert", tags=["alerts"])
 app.include_router(hardware.router, prefix="/api/hardware", tags=["hardware"])
 app.include_router(hardware.router, prefix="/api", tags=["hardware"])
 
+from .ws import manager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 @app.websocket("/ws")
 @app.websocket("/")
 async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
+    await manager.connect(websocket)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        pass
+        manager.disconnect(websocket)
 
 @app.get("/")
 def root():
     return {"status": "SARI Brain Agent API Online"}
+
+@app.get("/health")
+def health():
+    db_ok = False
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception:
+        db_ok = False
+    return {
+        "status": "ok" if db_ok else "degraded",
+        "database": "up" if db_ok else "down",
+    }
