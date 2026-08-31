@@ -21,11 +21,11 @@ interface Message {
 
 const formatMessageTimestamp = (dateStr?: string) => {
   if (!dateStr) return '';
-  let iso = dateStr;
-  if (!iso.endsWith('Z') && !iso.includes('+') && !iso.includes('-') && iso.includes('T')) {
+  let iso = dateStr.replace(' ', 'T');
+  const timePart = iso.split('T')[1] || '';
+  const hasTimezone = timePart.includes('Z') || timePart.includes('+') || (timePart.includes('-') && timePart.lastIndexOf('-') > 0);
+  if (!hasTimezone) {
     iso = `${iso}Z`;
-  } else if (!iso.includes('T') && iso.includes(' ')) {
-    iso = `${iso.replace(' ', 'T')}Z`;
   }
   const d = new Date(iso);
   if (isNaN(d.getTime())) return dateStr;
