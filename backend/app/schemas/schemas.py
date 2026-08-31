@@ -11,6 +11,11 @@ class Token(BaseModel):
     access_token: str
     token_type: str
     role: str
+    can_create_chats: bool = False
+    can_delete_chats: bool = False
+    can_rename_chats: bool = False
+    can_control_hardware: bool = False
+    can_manage_users: bool = False
 
 # --- Users ---
 class UserBase(BaseModel):
@@ -35,6 +40,7 @@ class UserResponse(UserBase):
 class ChatMessageBase(BaseModel):
     role: str
     content: str
+    snapshot: Optional[str] = None
 
 class ChatMessageCreate(ChatMessageBase):
     pass

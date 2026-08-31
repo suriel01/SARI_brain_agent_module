@@ -17,10 +17,15 @@ OLLAMA_EMBED_URL = OLLAMA_URL.replace("/api/chat", "/api/embeddings")
 OLLAMA_EMBED_MODEL = "nomic-embed-text"
 
 class AlertEventRequest(BaseModel):
+    module_name: Optional[str] = "Jetson-PTZ_1"
     camara_id: Optional[str] = "PTZ_1"
     event_type: str = "intrusion"
     severity: str = "high"
     message: str = "Intrusión detectada"
+    confidence: Optional[float] = None
+    duration: Optional[float] = None
+    snapshot: Optional[str] = None
+    image_base64: Optional[str] = None
     metadata: Optional[dict] = {}
 
 from ..models import models
@@ -93,7 +98,7 @@ def receive_alert_event(req: AlertEventRequest, background_tasks: BackgroundTask
     admin_user = crud.get_user_by_username(db, "admin")
     user_id = admin_user.id if admin_user else 1
 
-    module_clean = req.camara_id or "Jetson-PTZ_1"
+    module_clean = req.camara_id or req.module_name or "Jetson-PTZ_1"
     target_title = f"🚨 [EVIDENCIA] {module_clean}"
     
     # Reutilizar o crear hilo
@@ -111,9 +116,28 @@ def receive_alert_event(req: AlertEventRequest, background_tasks: BackgroundTask
     HardwareState.last_alert_thread_id = thread.id
     
     timestamp_str = datetime.datetime.now().strftime("%H:%M:%S")
-    conf = float(req.metadata.get("confidence", 0.90)) if req.metadata else 0.90
+    
+    # Resolver nivel de confianza
+    conf = req.confidence
+    if conf is None and req.metadata:
+        conf = float(req.metadata.get("confidence", 0.90))
+    if conf is None:
+        conf = 0.90
+
+    # Normalizar snapshot fotográfico en formato Data URL Base64
+    final_snapshot = req.snapshot
+    if not final_snapshot and req.image_base64:
+        if req.image_base64.startswith("data:image"):
+            final_snapshot = req.image_base64
+        else:
+            final_snapshot = f"data:image/jpeg;base64,{req.image_base64}"
+    elif final_snapshot and not final_snapshot.startswith("data:image"):
+        final_snapshot = f"data:image/jpeg;base64,{final_snapshot}"
+
     evidence_text = f"⚠️ ALERTA DE EVIDENCIA DESDE MÓDULO JETSON [{timestamp_str}]:\n• Dispositivo: {module_clean}\n• Tipo: {req.event_type} ({req.severity})\n• Evento: {req.message}\n• Confianza CV: {int(conf*100)}%"
-    crud.add_message(db, thread.id, role="system", content=evidence_text)
+    
+    # Guardar mensaje con captura fotográfica
+    crud.add_message(db, thread.id, role="system", content=evidence_text, snapshot=final_snapshot)
 
     # Registrar inmediatamente en los logs de auditoría del SOC (Hardware Control)
     log_level = "ERROR" if req.severity == "high" or req.event_type == "intrusion" else "WARN" if req.severity == "medium" else "INFO"
@@ -137,7 +161,8 @@ def receive_alert_event(req: AlertEventRequest, background_tasks: BackgroundTask
             "event": "siren_activated",
             "camara_id": module_clean,
             "severity": req.severity,
-            "thread_id": thread.id
+            "thread_id": thread.id,
+            "snapshot": final_snapshot
         })
 
     # Tarea en segundo plano para guardar vector de memoria
@@ -147,6 +172,8 @@ def receive_alert_event(req: AlertEventRequest, background_tasks: BackgroundTask
         "status": "success",
         "thread_id": thread.id,
         "evidence_log": evidence_text,
-        "siren_result": siren_response
+        "siren_result": siren_response,
+        "has_snapshot": bool(final_snapshot)
     }
+
 

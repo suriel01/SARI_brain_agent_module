@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User, MessageSquarePlus, Edit2, Trash2, Cpu, ShieldAlert, PanelLeftOpen, PanelLeftClose } from 'lucide-react';
+import { apiFetch, readErrorDetail } from '../api';
+import type { Permissions } from '../permissions';
 
 interface ChatPanelProps {
   token: string;
-  role: string;
+  permissions: Permissions;
   requestPin: (actionName: string, callback: (pin: string) => void) => void;
   fetchState: () => void;
   lastAlertThreadId?: number | null;
@@ -14,6 +16,7 @@ interface Message {
   content: string;
   created_at?: string;
   timestamp?: string;
+  snapshot?: string;
 }
 
 const formatInlineText = (text: string) => {
@@ -146,9 +149,7 @@ const renderFormattedContent = (text: string) => {
   return elements;
 };
 
-const API_BASE = 'http://localhost:7000/api';
-
-export default function ChatPanel({ token, role, requestPin, fetchState, lastAlertThreadId }: ChatPanelProps) {
+export default function ChatPanel({ token, permissions, requestPin, fetchState, lastAlertThreadId }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [threads, setThreads] = useState<any[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<number | null>(null);
@@ -263,9 +264,7 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
 
   const fetchThreads = async () => {
     try {
-      const res = await fetch(`${API_BASE}/chat/threads`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const res = await apiFetch('/chat/threads', token);
       if (res.ok) {
         const data = await res.json();
         setThreads(prev => {
@@ -293,9 +292,7 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
 
   const fetchMessages = async (threadId: number) => {
     try {
-      const res = await fetch(`${API_BASE}/chat/threads/${threadId}/messages`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const res = await apiFetch(`/chat/threads/${threadId}/messages`, token);
       if (res.ok) {
         const data = await res.json();
         setMessages(data);
@@ -306,16 +303,15 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
   };
 
   const startNewThread = () => {
-    if (role !== 'admin') {
-      alert('Action restricted: Only administrators can create new chats.');
+    if (!permissions.canCreateChats) {
+      alert('Action restricted: Permission required to create chats.');
       return;
     }
 
     requestPin('Create New Chat', async (pin) => {
       try {
-        const res = await fetch(`${API_BASE}/chat/threads`, {
+        const res = await apiFetch('/chat/threads', token, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ title: 'New Shared Chat', pin })
         });
         if (res.ok) {
@@ -323,7 +319,7 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
           fetchThreads();
           setActiveThreadId(data.id);
         } else {
-          alert('Incorrect PIN or error creating chat.');
+          alert(await readErrorDetail(res, 'Error creating chat.'));
         }
       } catch (err) {
         console.error(err);
@@ -337,9 +333,8 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
       const payload: any = { message: text };
       if (activeThreadId) payload.thread_id = activeThreadId;
 
-      const res = await fetch(`${API_BASE}/chat`, {
+      const res = await apiFetch('/chat', token, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(payload)
       });
       
@@ -390,7 +385,7 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
 
   const handleRenameThread = (e: React.MouseEvent, threadId: number, currentTitle: string) => {
     e.stopPropagation();
-    if (role !== 'admin') {
+    if (!permissions.canRenameChats) {
       alert('Action restricted: Permission required to rename chats.');
       return;
     }
@@ -399,15 +394,14 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
 
     requestPin('Rename Chat', async (pin) => {
       try {
-        const res = await fetch(`${API_BASE}/chat/threads/${threadId}`, {
+        const res = await apiFetch(`/chat/threads/${threadId}`, token, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ title: newTitle.trim(), pin })
         });
         if (res.ok) {
           fetchThreads();
         } else {
-          alert('Incorrect PIN or permission denied.');
+          alert(await readErrorDetail(res, 'Error renaming chat.'));
         }
       } catch (err) {
         console.error(err);
@@ -417,16 +411,15 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
 
   const handleDeleteThread = (e: React.MouseEvent, threadId: number) => {
     e.stopPropagation();
-    if (role !== 'admin') {
-      alert('Action restricted: Only administrators can delete chats.');
+    if (!permissions.canDeleteChats) {
+      alert('Action restricted: Permission required to delete chats.');
       return;
     }
 
     requestPin('Delete Chat Thread', async (pin) => {
       try {
-        const res = await fetch(`${API_BASE}/chat/threads/${threadId}?pin=${pin}`, {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${token}` }
+        const res = await apiFetch(`/chat/threads/${threadId}?pin=${encodeURIComponent(pin)}`, token, {
+          method: 'DELETE'
         });
         if (res.ok) {
           if (activeThreadId === threadId) {
@@ -434,7 +427,7 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
           }
           fetchThreads();
         } else {
-          alert('Incorrect PIN or permission denied.');
+          alert(await readErrorDetail(res, 'Error deleting chat.'));
         }
       } catch (err) {
         console.error(err);
@@ -451,7 +444,7 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
           <div style={{ padding: '0.8rem 1rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <button 
               onClick={startNewThread} 
-              style={{ flex: 1, opacity: role === 'admin' ? 1 : 0.6, fontSize: '0.82rem', padding: '0.5rem', background: '#0284c7', color: '#ffffff', border: '1px solid #0284c7', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              style={{ flex: 1, opacity: permissions.canCreateChats ? 1 : 0.6, fontSize: '0.82rem', padding: '0.5rem', background: '#0284c7', color: '#ffffff', border: '1px solid #0284c7', borderRadius: '6px', cursor: permissions.canCreateChats ? 'pointer' : 'not-allowed', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
               <MessageSquarePlus size={15} style={{ marginRight: '0.4rem' }}/> New Chat
             </button>
@@ -487,12 +480,14 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
                   {t.title}
                 </span>
                 <div style={{ display: 'flex', gap: '0.4rem' }}>
-                  <Edit2 
-                    size={14} 
-                    onClick={(e) => handleRenameThread(e, t.id, t.title)}
-                    style={{ cursor: 'pointer', opacity: 0.7 }}
-                  />
-                  {role === 'admin' && (
+                  {permissions.canRenameChats && (
+                    <Edit2 
+                      size={14} 
+                      onClick={(e) => handleRenameThread(e, t.id, t.title)}
+                      style={{ cursor: 'pointer', opacity: 0.7 }}
+                    />
+                  )}
+                  {permissions.canDeleteChats && (
                     <Trash2 
                       size={14} 
                       onClick={(e) => handleDeleteThread(e, t.id)}
@@ -737,6 +732,20 @@ export default function ChatPanel({ token, role, requestPin, fetchState, lastAle
                   backdropFilter: 'blur(8px)'
                 }}>
                   {renderFormattedContent(msg.content)}
+
+                  {msg.snapshot && (
+                    <div style={{ marginTop: '0.65rem', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(239, 68, 68, 0.4)', maxWidth: '380px', boxShadow: '0 4px 14px rgba(0, 0, 0, 0.45)', background: '#090a0f' }}>
+                      <div style={{ background: 'rgba(239, 68, 68, 0.2)', padding: '0.35rem 0.65rem', fontSize: '0.72rem', color: '#fca5a5', fontFamily: 'monospace', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.4rem', borderBottom: '1px solid rgba(239, 68, 68, 0.25)' }}>
+                        <span>📸 Evidencia Capturada — YOLO26n</span>
+                      </div>
+                      <img 
+                        src={msg.snapshot} 
+                        alt="Captura Intruso" 
+                        style={{ width: '100%', height: 'auto', display: 'block', objectFit: 'cover' }}
+                      />
+                    </div>
+                  )}
+
                   {(msg.timestamp || msg.created_at) && (
                     <div style={{ fontSize: '0.68rem', color: '#94a3b8', marginTop: '0.4rem', textAlign: msg.role === 'user' ? 'right' : 'left', opacity: 0.75, display: 'flex', alignItems: 'center', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start', gap: '0.3rem' }}>
                       <span>{new Date(msg.timestamp || msg.created_at!).toLocaleString()}</span>

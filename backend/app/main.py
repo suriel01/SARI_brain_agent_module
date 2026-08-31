@@ -24,6 +24,7 @@ with engine.connect() as conn:
     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_rename_chats BOOLEAN DEFAULT FALSE;"))
     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_control_hardware BOOLEAN DEFAULT FALSE;"))
     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_manage_users BOOLEAN DEFAULT FALSE;"))
+    conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS snapshot TEXT;"))
     conn.commit()
 
 app = FastAPI(title="SARI Brain Agent Backend")

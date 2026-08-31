@@ -39,6 +39,7 @@ class ChatMessage(Base):
     thread_id = Column(Integer, ForeignKey("chat_threads.id"))
     role = Column(String(20)) # "user", "system", "agent"
     content = Column(Text)
+    snapshot = Column(Text, nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow)
 
     thread = relationship("ChatThread", back_populates="messages")

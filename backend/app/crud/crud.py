@@ -57,8 +57,8 @@ def create_thread(db: Session, user_id: int, title: str = "Nueva Conversación")
     db.refresh(db_thread)
     return db_thread
 
-def add_message(db: Session, thread_id: int, role: str, content: str):
-    db_msg = models.ChatMessage(thread_id=thread_id, role=role, content=content)
+def add_message(db: Session, thread_id: int, role: str, content: str, snapshot: str = None):
+    db_msg = models.ChatMessage(thread_id=thread_id, role=role, content=content, snapshot=snapshot)
     db.add(db_msg)
     db.commit()
     db.refresh(db_msg)
