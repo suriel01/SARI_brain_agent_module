@@ -92,6 +92,12 @@ def get_alerts_status_and_logs(db: Session = Depends(get_db)):
 
 @router.post("/event")
 @router.post("/event/")
+@router.post("/alerts/event")
+@router.post("/alerts/event/")
+@router.post("/alert/event")
+@router.post("/alert/event/")
+@router.post("/alerta")
+@router.post("/alertas")
 @router.post("/")
 @router.post("")
 def receive_alert_event(req: AlertEventRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
