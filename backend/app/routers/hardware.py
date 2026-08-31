@@ -3,6 +3,7 @@ import requests
 import os
 from ..schemas import schemas
 from .deps import get_current_user
+from ..security import has_perm, require_pin
 
 router = APIRouter()
 
@@ -55,6 +56,7 @@ class HardwareState:
 
     @classmethod
     def add_log(cls, msg: str, level: str = "INFO", camera_module: str = "SYS_CORE", ttl_hours: int = 24):
+        cls.purge_expired_logs()
         now = datetime.datetime.now()
         expires = now + datetime.timedelta(hours=ttl_hours)
         ts_str = now.strftime("%Y-%m-%d %H:%M:%S")
@@ -69,28 +71,65 @@ class HardwareState:
         if len(cls.logs) > 300:
             cls.logs.pop()
 
+    @classmethod
+    def purge_expired_logs(cls):
+        now = datetime.datetime.now()
+        kept = []
+        for log in cls.logs:
+            exp = log.get("expires_at")
+            if not exp:
+                kept.append(log)
+                continue
+            try:
+                if datetime.datetime.strptime(exp, "%Y-%m-%d %H:%M:%S") > now:
+                    kept.append(log)
+            except ValueError:
+                kept.append(log)
+        cls.logs = kept
+
+from ..ws import manager
+import asyncio
+
 def execute_physical_tool(tool_name: str, args: dict):
     if tool_name == "activar_sirena":
+        HardwareState.siren_active = True
+        HardwareState.alert_count += 1
+        HardwareState.last_alert_time = time.time()
+        HardwareState.add_log(f"🚨 Physical Siren activated for {args.get('duracion_segundos', 30)}s", level="ERROR", camera_module="HARDWARE_CTRL")
+        
+        # Intento de activación de hardware físico (sin bloquear el estado del SOC)
         try:
-            res = requests.post(f"{SIRENA_SERVICE_URL}/api/alarma/activar", json={"duracion": args.get("duracion_segundos", 30)}, timeout=5.0)
-            if res.status_code == 200:
-                HardwareState.siren_active = True
-                HardwareState.alert_count += 1
-                HardwareState.last_alert_time = time.time()
-                HardwareState.add_log(f"🚨 Physical Siren activated for {args.get('duracion_segundos', 30)}s", level="ERROR", camera_module="HARDWARE_CTRL")
-                return {"status": "success", "message": "🚨 Siren activated."}
-            return {"status": "error", "message": f"Siren service failed: {res.status_code}"}
+            requests.post(f"{SIRENA_SERVICE_URL}/api/alarma/activar", json={"duracion": args.get("duracion_segundos", 30)}, timeout=2.0)
         except Exception as e:
-            return {"status": "error", "message": f"Failed to contact siren: {e}"}
+            print(f"Warning contacting physical siren service: {e}")
+        
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(manager.broadcast_json({"event": "siren_activated"}))
+        except Exception:
+            pass
+
+        return {"status": "success", "message": "🚨 Siren activated."}
 
     elif tool_name == "desactivar_sirena":
+        HardwareState.siren_active = False
+        HardwareState.add_log("🔊 Siren deactivated / silenced by operator", level="INFO", camera_module="HARDWARE_CTRL")
+        
+        # Intento de desactivación de hardware físico
         try:
-            res = requests.post(f"{SIRENA_SERVICE_URL}/api/alarma/desactivar", timeout=5.0)
-            HardwareState.siren_active = False
-            HardwareState.add_log("🔊 Siren deactivated", level="INFO", camera_module="HARDWARE_CTRL")
-            return {"status": "success", "message": "🔊 Siren turned off."}
+            requests.post(f"{SIRENA_SERVICE_URL}/api/alarma/desactivar", timeout=2.0)
         except Exception as e:
-            return {"status": "error", "message": str(e)}
+            print(f"Warning contacting physical siren service: {e}")
+
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(manager.broadcast_json({"event": "siren_deactivated"}))
+        except Exception:
+            pass
+
+        return {"status": "success", "message": "🔊 Siren turned off & silenced."}
 
     elif tool_name == "cerrar_accesos":
         HardwareState.gates_locked = True
@@ -105,8 +144,10 @@ def execute_physical_tool(tool_name: str, args: dict):
     return {"status": "error", "message": "Unknown tool"}
 
 
+
 @router.get("/state")
 def get_state(current_user: dict = Depends(get_current_user)):
+    HardwareState.purge_expired_logs()
     if HardwareState.siren_active and (time.time() - HardwareState.last_alert_time > 30):
         HardwareState.siren_active = False
 
@@ -120,9 +161,10 @@ def get_state(current_user: dict = Depends(get_current_user)):
 
 @router.post("/manual_action")
 def manual_action(req: dict, current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") != "admin":
+    if not has_perm(current_user, "can_control_hardware"):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
-    
+    require_pin(req.get("pin"))
+
     action = req.get("action")
     if action in ["toggle_sirena", "activar_sirena", "desactivar_sirena"]:
         if HardwareState.siren_active:

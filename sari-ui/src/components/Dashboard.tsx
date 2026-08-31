@@ -55,9 +55,7 @@ export default function Dashboard({ token, role, permissions, onLogout }: Dashbo
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.event === 'siren_activated') {
-          console.log("WebSocket Alert: Siren Activated by Jetson!", data);
-          // Forzar la recarga del estado inmediatamente para reflejar la sirena
+        if (data.event === 'siren_activated' || data.event === 'siren_deactivated') {
           fetchState();
         }
       } catch (e) {
