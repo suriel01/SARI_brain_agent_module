@@ -37,7 +37,7 @@ graph TD
 * **Tecnologías**: FastAPI (Python), SQLAlchemy, PostgreSQL, Uvicorn.
 * **Características**:
   * **Persistencia**: Guarda hilos y mensajes utilizando Base de Datos PostgreSQL.
-  * **IA Local**: Integra llamadas locales a Ollama (`qwen2.5-coder:14b`) para analizar incidencias de seguridad y responder al operador.
+  * **IA Local**: Integra llamadas locales a Ollama (`qwen2.5:7b`) para analizar incidencias de seguridad y responder al operador.
   * **Control Físico**: Administra el estado global de los actuadores físicos (`HardwareState`) e inserta registros dinámicos de inicio en el historial.
 
 ### 3. **SARI Ojos (Nodo de Percepción - Jetson Orin)**

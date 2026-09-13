@@ -53,3 +53,15 @@ class EventLog(Base):
     event_description = Column(Text)
     confidence = Column(Float, nullable=True)
     embedding = Column(Vector(768)) # 768 para nomic-embed-text
+
+class EyeNode(Base):
+    __tablename__ = "eye_nodes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    node_id = Column(String(50), unique=True, index=True, nullable=False)
+    name = Column(String(100), nullable=False)
+    ip = Column(String(50), default="192.168.1.73")
+    stream_url = Column(String(255), default="http://192.168.55.1:8080/mjpeg")
+    yolo_threshold = Column(Float, default=0.70)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

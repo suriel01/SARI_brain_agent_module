@@ -11,7 +11,7 @@ Este documento define la arquitectura, convenciones y directivas operativas del 
 - **Backend API**: FastAPI (Python 3.12) expuesto en puerto `7000`.
 - **Frontend SOC Dashboard**: React + TypeScript + Vite + Vanilla CSS expuesto en puerto `5173`.
 - **Control Físico**: Microservicio de sirenas (`sirena_service.py`) expuesto en puerto `5000`.
-- **Motor LLM**: NeMo Guardrails + Ollama (`qwen2.5-coder:14b`) con rieles de seguridad offline (sin acceso a internet).
+- **Motor LLM**: NeMo Guardrails + Ollama (`qwen2.5:7b`) con rieles de seguridad offline (sin acceso a internet).
 - **Integración de Visión por Computadora**: Endpoint REST/MCP (`/api/alerts/event`) diseñado para la recepción automatizada de alertas de módulos **NVIDIA Jetson con YOLO26n**.
 
 ---

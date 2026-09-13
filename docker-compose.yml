@@ -9,6 +9,16 @@ services:
       - "8000:7000"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - ./backend/app:/app/app
+      - ./tests:/app/tests
     environment:
       - PORT=7000
       - OLLAMA_URL=http://host.docker.internal:11434/api/chat
@@ -22,10 +32,30 @@ services:
       - SARI_SECURITY_PIN=1234
       - SARI_TOKEN_EXPIRE_MINUTES=720
       - CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+      - MQTT_BROKER_HOST=sari-mqtt
+      - MQTT_BROKER_PORT=1883
+      - MQTT_USER=sari_operator
+      - MQTT_PASSWORD=sari_secure_password_2026
       - TZ=America/Mexico_City
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_ALLOWED_CHAT_IDS=${TELEGRAM_ALLOWED_CHAT_IDS:-}
+      - TELEGRAM_POLLING_ENABLED=${TELEGRAM_POLLING_ENABLED:-true}
     depends_on:
       postgres_db:
         condition: service_healthy
+      sari-mqtt:
+        condition: service_started
+    restart: unless-stopped
+
+  sari-mqtt:
+    image: eclipse-mosquitto:2.0
+    container_name: sari-mqtt
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
     restart: unless-stopped
 
   sari-sirena:

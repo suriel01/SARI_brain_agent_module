@@ -1,31 +1,34 @@
 import { useState, useEffect } from 'react';
-import { LogOut, ShieldAlert, BellRing, Lock, PanelLeftOpen, PanelLeftClose } from 'lucide-react';
+import { LogOut, BellRing, Lock, PanelLeftOpen, PanelLeftClose, Sun, Moon } from 'lucide-react';
 import ChatPanel from './ChatPanel';
 import HardwarePanel from './HardwarePanel';
 import AdminPanel from './AdminPanel';
 import PinModal from './PinModal';
-import CameraFeed from './CameraFeed';
+import EyesModule from './EyesModule';
 import CircuitCanvas from './CircuitCanvas';
 import { apiFetch } from '../api';
 import type { Permissions } from '../permissions';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface DashboardProps {
   token: string;
   role: string;
   permissions: Permissions;
   onLogout: () => void;
+  isDarkMode: boolean;
+  toggleTheme: () => void;
 }
 
-export default function Dashboard({ token, role, permissions, onLogout }: DashboardProps) {
+export default function Dashboard({ token, role, permissions, onLogout, isDarkMode, toggleTheme }: DashboardProps) {
+  const { language, setLanguage, t } = useLanguage();
   const [state, setState] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'chat' | 'perception' | 'hardware' | 'admin'>('chat');
+  const [selectedEyeId, setSelectedEyeId] = useState<string | null>(null);
   
-  // Main Modules Sidebar Resizing & Collapsing State
   const [moduleWidth, setModuleWidth] = useState(260);
   const [isModulesCollapsed, setIsModulesCollapsed] = useState(false);
   const [isResizingModules, setIsResizingModules] = useState(false);
 
-  // Modal State
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<string>('');
   const [actionCallback, setActionCallback] = useState<((pin: string) => void) | null>(null);
@@ -48,7 +51,6 @@ export default function Dashboard({ token, role, permissions, onLogout }: Dashbo
     return () => clearInterval(interval);
   }, [token]);
 
-  // WebSocket Listener para alertas en tiempo real
   useEffect(() => {
     const wsUrl = window.location.hostname === 'localhost' ? 'ws://localhost:8000/ws' : `ws://${window.location.hostname}:8000/ws`;
     const ws = new WebSocket(wsUrl);
@@ -65,7 +67,6 @@ export default function Dashboard({ token, role, permissions, onLogout }: Dashbo
     return () => ws.close();
   }, []);
 
-  // Modules Resizing Effect
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizingModules) return;
@@ -77,30 +78,23 @@ export default function Dashboard({ token, role, permissions, onLogout }: Dashbo
         setModuleWidth(Math.min(Math.max(newWidth, 180), 380));
       }
     };
-
-    const handleMouseUp = () => {
-      setIsResizingModules(false);
-    };
+    const handleMouseUp = () => setIsResizingModules(false);
 
     if (isResizingModules) {
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
     }
-
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [isResizingModules]);
 
-  // Web Audio API Siren Fallback & Browser Audio Unlock
   useEffect(() => {
     if (state?.siren_active) {
       try {
         const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-        if (audioCtx.state === 'suspended') {
-          audioCtx.resume();
-        }
+        if (audioCtx.state === 'suspended') audioCtx.resume();
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
         osc.type = 'sawtooth';
@@ -116,17 +110,13 @@ export default function Dashboard({ token, role, permissions, onLogout }: Dashbo
         gain.connect(audioCtx.destination);
         osc.start();
         return () => {
-          try {
-            osc.stop();
-            audioCtx.close();
-          } catch (e) {}
+          try { osc.stop(); audioCtx.close(); } catch (e) {}
         };
       } catch (e) {
         console.error('Web Audio error:', e);
       }
     }
   }, [state?.siren_active]);
-
 
   const requestPin = (actionName: string, callback: (pin: string) => void) => {
     setPendingAction(actionName);
@@ -135,15 +125,13 @@ export default function Dashboard({ token, role, permissions, onLogout }: Dashbo
   };
 
   const handlePinSubmit = (pin: string) => {
-    if (actionCallback) {
-      actionCallback(pin);
-    }
+    if (actionCallback) actionCallback(pin);
     setPinModalOpen(false);
   };
 
   const handleQuickEmergencyAction = (actionName: string) => {
     if (!permissions.canControlHardware) {
-      alert('Permission denied: Hardware control required.');
+      alert(t('pinRequiredAction'));
       return;
     }
     requestPin(actionName, async (pin) => {
@@ -159,209 +147,193 @@ export default function Dashboard({ token, role, permissions, onLogout }: Dashbo
     });
   };
 
+  const NavItem = ({ id, label, icon: Icon }: { id: typeof activeTab, label: string, icon?: any }) => {
+    const isActive = activeTab === id;
+    return (
+      <button 
+        onClick={() => setActiveTab(id)}
+        className={`w-full px-4 py-2.5 rounded-full flex items-center gap-3 mb-1.5 text-sm font-medium transition-all duration-200 active:scale-98 ${
+          isActive 
+            ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-950 shadow-sm' 
+            : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/60 hover:text-zinc-900 dark:hover:text-zinc-100'
+        }`}
+      >
+        {Icon && <Icon size={16} className={isActive ? 'text-white dark:text-zinc-950' : 'text-zinc-500 dark:text-zinc-400'} />}
+        <span>{label}</span>
+      </button>
+    );
+  };
+
   return (
-    <div style={{ display: 'flex', height: '100vh', backgroundColor: '#090a0f', overflow: 'hidden', position: 'relative' }}>
-      <CircuitCanvas />
+    <div className="flex h-screen bg-zinc-100 dark:bg-zinc-950 overflow-hidden relative text-zinc-900 dark:text-zinc-100 font-sans transition-colors duration-200">
+      <div className="absolute inset-0 opacity-15 dark:opacity-10 pointer-events-none">
+        <CircuitCanvas />
+      </div>
       
-      {/* Main Left Sidebar (MODULES) */}
       {!isModulesCollapsed && (
-        <aside style={{ width: `${moduleWidth}px`, backgroundColor: 'rgba(19, 21, 28, 0.88)', backdropFilter: 'blur(12px)', borderRight: '1px solid #2d323e', display: 'flex', flexDirection: 'column', padding: '1rem 0', flexShrink: 0, zIndex: 2 }}>
-          
-          {/* Brand & Collapse Header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 1.2rem', marginBottom: '2rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.7rem', flex: 1 }}>
-              <ShieldAlert size={22} color="#94a3b8" />
-              <span style={{ fontSize: '1.15rem', fontWeight: 600, color: '#f8fafc', letterSpacing: '0.5px' }}>SARI AGENT</span>
-            </div>
-
-            <PanelLeftClose 
-              size={18} 
-              onClick={() => setIsModulesCollapsed(true)} 
-              style={{ cursor: 'pointer', color: '#94a3b8', transition: 'color 0.2s' }} 
-              onMouseEnter={(e) => (e.currentTarget.style.color = '#f1f5f9')}
-              onMouseLeave={(e) => (e.currentTarget.style.color = '#94a3b8')}
-            />
-          </div>
-          
-          {/* Nav Sections */}
-          <div style={{ flex: 1, padding: '0 1rem' }}>
-            <div style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '0.5rem', paddingLeft: '0.5rem' }}>Modules</div>
-            
-            <div 
-              onClick={() => setActiveTab('chat')}
-              style={{ padding: '0.55rem 1rem', cursor: 'pointer', borderRadius: '6px', backgroundColor: activeTab === 'chat' ? 'rgba(255, 255, 255, 0.08)' : 'transparent', color: activeTab === 'chat' ? '#f1f5f9' : '#94a3b8', display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '0.2rem', fontWeight: activeTab === 'chat' ? 600 : 400, borderLeft: activeTab === 'chat' ? '3px solid #64748b' : '3px solid transparent' }}
-            >
-              <span style={{ fontSize: '0.9rem' }}>Chat</span>
-            </div>
-
-            <div 
-              onClick={() => setActiveTab('perception')}
-              style={{ padding: '0.55rem 1rem', cursor: 'pointer', borderRadius: '6px', backgroundColor: activeTab === 'perception' ? 'rgba(255, 255, 255, 0.08)' : 'transparent', color: activeTab === 'perception' ? '#f1f5f9' : '#94a3b8', display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '0.2rem', fontWeight: activeTab === 'perception' ? 600 : 400, borderLeft: activeTab === 'perception' ? '3px solid #64748b' : '3px solid transparent' }}
-            >
-              <span style={{ fontSize: '0.9rem' }}>Live Perception</span>
-            </div>
-
-            <div 
-              onClick={() => setActiveTab('hardware')}
-              style={{ padding: '0.55rem 1rem', cursor: 'pointer', borderRadius: '6px', backgroundColor: activeTab === 'hardware' ? 'rgba(255, 255, 255, 0.08)' : 'transparent', color: activeTab === 'hardware' ? '#f1f5f9' : '#94a3b8', display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '0.2rem', fontWeight: activeTab === 'hardware' ? 600 : 400, borderLeft: activeTab === 'hardware' ? '3px solid #64748b' : '3px solid transparent' }}
-            >
-              <span style={{ fontSize: '0.9rem' }}>Hardware Control</span>
-            </div>
-
-            {permissions.canManageUsers && (
-              <div 
-                onClick={() => setActiveTab('admin')}
-                style={{ marginTop: '0.2rem', padding: '0.55rem 1rem', cursor: 'pointer', borderRadius: '6px', backgroundColor: activeTab === 'admin' ? 'rgba(255, 255, 255, 0.08)' : 'transparent', color: activeTab === 'admin' ? '#f1f5f9' : '#94a3b8', display: 'flex', alignItems: 'center', gap: '0.8rem', fontWeight: activeTab === 'admin' ? 600 : 400, borderLeft: activeTab === 'admin' ? '3px solid #64748b' : '3px solid transparent' }}
-              >
-                <span style={{ fontSize: '0.9rem' }}>User Management</span>
+        <aside 
+          style={{ width: `${moduleWidth}px` }} 
+          className="m-3 mr-0 bg-white/95 dark:bg-zinc-900/90 backdrop-blur-xl border border-zinc-200/80 dark:border-zinc-800/80 rounded-3xl flex flex-col py-5 px-3 shrink-0 z-20 shadow-sm transition-all"
+        >
+          <div className="flex items-center justify-between px-3 mb-6">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-white p-0.5 flex items-center justify-center shadow-md border border-zinc-200 dark:border-zinc-800 shrink-0">
+                <img src="/sari_logo.jpeg" alt="SARI" className="w-7 h-7 object-contain rounded-lg" />
               </div>
-            )}
+              <div>
+                <div className="text-sm font-bold tracking-tight text-zinc-900 dark:text-white leading-none">SARI AGENT</div>
+                <div className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium mt-0.5">{t('socPerimeter')}</div>
+              </div>
+            </div>
+            <button 
+              onClick={() => setIsModulesCollapsed(true)} 
+              className="w-7 h-7 rounded-full flex items-center justify-center text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              title={t('collapseSidebar')}
+            >
+              <PanelLeftClose size={16} />
+            </button>
+          </div>
+          
+          <div className="flex-1 px-1">
+            <div className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2 pl-3">{t('modules')}</div>
+            <NavItem id="chat" label={t('chatSari')} />
+            <NavItem id="perception" label={t('livePerception')} />
+            <NavItem id="hardware" label={t('hardwareControl')} />
+            {permissions.canManageUsers && <NavItem id="admin" label={t('userManagement')} />}
           </div>
 
-          {/* Bottom actions (BOTÓN AZUL DE ACCIÓN) */}
-          <div style={{ padding: '1rem', borderTop: '1px solid #2d323e' }}>
+          <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800 px-1">
              <button 
                onClick={onLogout} 
-               style={{ 
-                 width: '100%', 
-                 padding: '0.65rem 1rem', 
-                 background: '#0284c7', 
-                 border: '1px solid #0284c7', 
-                 borderRadius: '8px', 
-                 color: '#ffffff', 
-                 cursor: 'pointer', 
-                 display: 'flex', 
-                 alignItems: 'center', 
-                 justifyContent: 'center', 
-                 gap: '0.6rem',
-                 fontSize: '0.85rem',
-                 fontWeight: 600,
-                 transition: 'all 0.2s ease',
-                 boxShadow: '0 2px 10px rgba(2, 132, 199, 0.3)'
-               }}
+               className="w-full py-2.5 px-4 rounded-full border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-white text-xs font-semibold transition-all flex items-center justify-center gap-2 shadow-sm"
              >
-               <LogOut size={16} /> <span>Logout [{role}]</span>
+               <LogOut size={14} /> <span>{t('logout')} [{role}]</span>
              </button>
           </div>
         </aside>
       )}
 
-      {/* Resize Handle for Modules Sidebar */}
       {!isModulesCollapsed && (
         <div 
-          onMouseDown={() => setIsResizingModules(true)}
-          style={{
-            width: '5px',
-            cursor: 'col-resize',
-            backgroundColor: isResizingModules ? '#64748b' : 'transparent',
-            transition: 'background-color 0.2s',
-            zIndex: 10,
-            borderRight: '1px solid #2d323e'
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(148, 163, 184, 0.4)')}
-          onMouseLeave={(e) => (!isResizingModules && (e.currentTarget.style.backgroundColor = 'transparent'))}
+          onMouseDown={() => setIsResizingModules(true)} 
+          className={`w-2 cursor-col-resize z-30 transition-colors ${isResizingModules ? 'bg-zinc-400/50' : 'hover:bg-zinc-300/40 dark:hover:bg-zinc-700/40'}`}
         />
       )}
 
-      {/* Main Content Area */}
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', zIndex: 2 }}>
-        
-        {/* Topbar with 1-Click Emergency Toolbar */}
-        <header style={{ height: '60px', display: 'flex', alignItems: 'center', padding: '0 1.5rem', borderBottom: '1px solid #2d323e', justifyContent: 'space-between', backgroundColor: 'rgba(19, 21, 28, 0.88)', backdropFilter: 'blur(12px)' }}>
-           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-             {/* Show Unfold Button for Modules when collapsed (BOTÓN AZUL DE ACCIÓN) */}
+      <main className="flex-1 flex flex-col overflow-hidden z-10 relative p-3 gap-3">
+        <header className="h-14 flex items-center px-5 rounded-2xl bg-white/90 dark:bg-zinc-900/90 backdrop-blur-xl border border-zinc-200/80 dark:border-zinc-800/80 justify-between shadow-sm transition-colors">
+           <div className="flex items-center gap-3">
              {isModulesCollapsed && (
                <button
                  onClick={() => setIsModulesCollapsed(false)}
-                 title="Expand Modules Sidebar"
-                 style={{
-                   background: '#0284c7',
-                   border: '1px solid #0284c7',
-                   color: '#ffffff',
-                   padding: '0.35rem 0.75rem',
-                   borderRadius: '6px',
-                   fontSize: '0.8rem',
-                   fontWeight: 600,
-                   cursor: 'pointer',
-                   display: 'flex',
-                   alignItems: 'center',
-                   gap: '0.4rem',
-                   boxShadow: '0 2px 8px rgba(2, 132, 199, 0.3)'
-                 }}
+                 title={t('expandSidebar')}
+                 className="bg-zinc-900 dark:bg-white text-white dark:text-zinc-950 px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-2 hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-all shadow-sm active:scale-95"
                >
-                 <PanelLeftOpen size={16} /> Modules
+                 <PanelLeftOpen size={15} /> {t('expandSidebar')}
                </button>
              )}
-
-             <div style={{ fontSize: '1rem', fontWeight: 600, color: '#f1f5f9', letterSpacing: '0.02em' }}>
-               {activeTab === 'chat' ? 'Chat' : activeTab === 'perception' ? 'Live Perception' : activeTab === 'hardware' ? 'Hardware Control' : 'User Management'}
+             <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 tracking-tight flex items-center gap-2">
+               <span className="w-2 h-2 rounded-full bg-zinc-400 dark:bg-zinc-600"></span>
+               {activeTab === 'chat' ? t('chatSari') : activeTab === 'perception' ? t('livePerception') : activeTab === 'hardware' ? t('hardwareControl') : t('userManagement')}
              </div>
            </div>
 
-           {/* Emergency Action Buttons (Rojo para máxima importancia, Amarillo para alerta de portones) */}
-           <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
-              
-              {/* Single Siren Toggle Button (Rojo ÚNICAMENTE si está activa la emergencia) */}
+           <div className="flex items-center gap-2.5">
+              {/* Language Switcher Pill (ES | EN) */}
+              <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800/80 p-1 rounded-full border border-zinc-200/80 dark:border-zinc-700/80 shadow-sm">
+                <button
+                  onClick={() => setLanguage('es')}
+                  className={`px-2.5 py-1 rounded-full text-xs font-bold transition-all active:scale-95 ${
+                    language === 'es'
+                      ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-950 shadow-sm'
+                      : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                  }`}
+                  title="Cambiar a Español"
+                >
+                  ES
+                </button>
+                <button
+                  onClick={() => setLanguage('en')}
+                  className={`px-2.5 py-1 rounded-full text-xs font-bold transition-all active:scale-95 ${
+                    language === 'en'
+                      ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-950 shadow-sm'
+                      : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                  }`}
+                  title="Switch to English"
+                >
+                  EN
+                </button>
+              </div>
+
+              <button 
+                onClick={toggleTheme}
+                className="w-9 h-9 rounded-full flex items-center justify-center text-zinc-600 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white bg-zinc-100 dark:bg-zinc-800/80 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all border border-zinc-200/60 dark:border-zinc-700/60 shadow-sm"
+                title={t('toggleTheme')}
+              >
+                {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
+              </button>
+
+              <div className="w-px h-5 bg-zinc-200 dark:bg-zinc-800 mx-1" />
+
               <button 
                 onClick={() => handleQuickEmergencyAction('toggle_sirena')}
-                style={{
-                  background: state?.siren_active ? '#ff0055' : 'rgba(255, 255, 255, 0.05)',
-                  border: `1px solid ${state?.siren_active ? '#ff0055' : '#30363d'}`,
-                  color: state?.siren_active ? '#ffffff' : '#9ca3af',
-                  padding: '0.35rem 0.8rem',
-                  borderRadius: '6px',
-                  fontSize: '0.78rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.4rem',
-                  animation: state?.siren_active ? 'pulse 1s infinite' : 'none'
-                }}
+                className={`px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-2 transition-all active:scale-95 shadow-sm ${
+                  state?.siren_active 
+                    ? 'bg-red-600 text-white border border-red-600 shadow-md shadow-red-600/30 animate-pulse' 
+                    : 'bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200/80 dark:border-zinc-700/80 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                }`}
               >
-                <BellRing size={14} color={state?.siren_active ? '#ffffff' : '#9ca3af'} /> {state?.siren_active ? '🚨 Siren (ACTIVE EMERGENCY)' : 'Siren (Off)'}
+                <BellRing size={13} className={state?.siren_active ? 'text-white' : 'text-zinc-500 dark:text-zinc-400'} /> 
+                {state?.siren_active ? t('sirenOn') : t('sirenOff')}
               </button>
 
-              {/* Single Gates Toggle Button (Amarillo ÚNICAMENTE si está bloqueado) */}
               <button 
                 onClick={() => handleQuickEmergencyAction('toggle_accesos')}
-                style={{
-                  background: state?.gates_locked ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                  border: `1px solid ${state?.gates_locked ? '#f59e0b' : '#30363d'}`,
-                  color: state?.gates_locked ? '#f59e0b' : '#9ca3af',
-                  padding: '0.35rem 0.8rem',
-                  borderRadius: '6px',
-                  fontSize: '0.78rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.4rem'
-                }}
+                className={`px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-2 transition-all active:scale-95 shadow-sm ${
+                  state?.gates_locked 
+                    ? 'bg-amber-600 text-white border border-amber-600 shadow-md shadow-amber-600/30' 
+                    : 'bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200/80 dark:border-zinc-700/80 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                }`}
               >
-                <Lock size={14} color={state?.gates_locked ? '#f59e0b' : '#9ca3af'} /> {state?.gates_locked ? '🔒 Gates Locked' : 'Lock Gates'}
+                <Lock size={13} className={state?.gates_locked ? 'text-white' : 'text-zinc-500 dark:text-zinc-400'} /> 
+                {state?.gates_locked ? t('unlockGates') : t('lockGates')}
               </button>
 
-              <div style={{ width: '1px', height: '20px', backgroundColor: '#30363d', margin: '0 0.2rem' }} />
+              <div className="w-px h-5 bg-zinc-200 dark:bg-zinc-800 mx-1" />
 
-              {/* Status Badge (Verde = Normal / OK) */}
-              <div style={{ background: 'rgba(255, 255, 255, 0.04)', padding: '0.3rem 0.8rem', borderRadius: '20px', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', border: '1px solid #30363d' }}>
-                 <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: state?.siren_active ? '#ff0055' : state?.gates_locked ? '#f59e0b' : '#10b981' }}></div>
-                 <span style={{ color: '#c9d1d9' }}>{state?.siren_active ? 'EMERGENCY ALERT' : state?.gates_locked ? 'Gates Locked' : 'System Normal'}</span>
+              <div className="bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200/80 dark:border-zinc-700/80 px-3.5 py-1.5 rounded-full flex items-center gap-2 text-xs font-medium shadow-sm">
+                 <div className={`w-2 h-2 rounded-full ${state?.siren_active ? 'bg-red-500 animate-ping' : state?.gates_locked ? 'bg-amber-500' : 'bg-emerald-500'}`}></div>
+                 <span className="text-zinc-700 dark:text-zinc-300">
+                   {state?.siren_active ? t('systemAlert') : state?.gates_locked ? t('gatesLocked') : t('systemNormal')}
+                 </span>
               </div>
            </div>
         </header>
 
-        {/* Content Body */}
-        <div style={{ flex: 1, overflow: 'hidden' }}>
+        <div className="flex-1 overflow-hidden rounded-3xl bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-zinc-200/80 dark:border-zinc-800/80 shadow-sm relative">
           {activeTab === 'chat' ? (
             <ChatPanel token={token} permissions={permissions} requestPin={requestPin} fetchState={fetchState} lastAlertThreadId={state?.last_alert_thread_id} />
           ) : activeTab === 'perception' ? (
-            <div style={{ padding: '2rem', height: '100%' }}>
-              <CameraFeed />
+            <div className="p-4 h-full">
+              <EyesModule 
+                token={token} 
+                permissions={permissions} 
+                requestPin={requestPin} 
+                initialSelectedNodeId={selectedEyeId} 
+              />
             </div>
           ) : activeTab === 'hardware' ? (
-            <HardwarePanel token={token} permissions={permissions} requestPin={requestPin} state={state} fetchState={fetchState} />
+            <HardwarePanel 
+              token={token} 
+              permissions={permissions} 
+              requestPin={requestPin} 
+              state={state} 
+              fetchState={fetchState} 
+              onNavigateToEye={(nodeId) => {
+                setSelectedEyeId(nodeId);
+                setActiveTab('perception');
+              }}
+            />
           ) : (
             <AdminPanel token={token} />
           )}

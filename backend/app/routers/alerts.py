@@ -9,6 +9,7 @@ import os
 from ..database import get_db, SessionLocal
 from ..crud import crud
 from .hardware import execute_physical_tool, HardwareState
+from ..telegram.service import send_telegram_alert_photo
 
 router = APIRouter()
 
@@ -118,6 +119,7 @@ def receive_alert_event(req: AlertEventRequest, background_tasks: BackgroundTask
         db.refresh(thread)
     
     HardwareState.last_alert_thread_id = thread.id
+    HardwareState.record_node_activity(module_clean, ip="192.168.55.1")
     
     # Obtener hora local (America/Mexico_City / UTC-6)
     try:
@@ -157,6 +159,32 @@ def receive_alert_event(req: AlertEventRequest, background_tasks: BackgroundTask
         level=log_level,
         camera_module="JETSON_CV"
     )
+
+    # Dispatch to Telegram
+    telegram_caption = (
+        f"🚨 *ALERTA CRÍTICA SARI — PERÍMETRO*\n\n"
+        f"• *Nodo*: `{module_clean}`\n"
+        f"• *Evento*: {req.message}\n"
+        f"• *Severidad*: `{req.severity.upper()}`\n"
+        f"• *Confianza CV*: `{int(conf*100)}%`\n"
+        f"• *Hora*: `{timestamp_str}`"
+    )
+    telegram_buttons = {
+        "inline_keyboard": [
+            [
+                {"text": "🚨 Activar Sirena 30s", "callback_data": "btn_siren_activate"},
+                {"text": "🔒 Bloquear Accesos", "callback_data": "btn_gates_lock"}
+            ],
+            [
+                {"text": "🔊 Silenciar Alarma", "callback_data": "btn_silence"},
+                {"text": "📊 Ver Estado", "callback_data": "btn_status"}
+            ]
+        ]
+    }
+    try:
+        send_telegram_alert_photo(final_snapshot, caption=telegram_caption, reply_markup=telegram_buttons)
+    except Exception as ex_tg:
+        print(f"[HTTP->Telegram] Error delivering alert photo: {ex_tg}")
 
     siren_response = None
     if req.event_type == "intrusion" and conf >= 0.70:

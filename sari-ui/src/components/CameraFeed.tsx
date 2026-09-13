@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { RotateCw, FlipHorizontal, FlipVertical, Maximize2, Minimize2, RefreshCcw } from 'lucide-react';
+import { RotateCw, FlipHorizontal, FlipVertical, Maximize2, Minimize2, RefreshCcw, Video, Settings2 } from 'lucide-react';
+import { useLanguage } from '../i18n/LanguageContext';
 
 export default function CameraFeed() {
+  const { language, t } = useLanguage();
   const [fps, setFps] = useState(30);
   const [streamUrl, setStreamUrl] = useState('http://192.168.55.1:8080/mjpeg');
   const [streamError, setStreamError] = useState(false);
@@ -23,7 +25,6 @@ export default function CameraFeed() {
     return () => clearInterval(interval);
   }, []);
 
-  // Listen for fullscreen change events (e.g. Pressing ESC key)
   useEffect(() => {
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
@@ -56,209 +57,160 @@ export default function CameraFeed() {
   };
 
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', gap: '0.8rem', alignItems: 'center' }}>
+    <div className="w-full h-full flex flex-col items-center justify-start gap-4 p-2 overflow-y-auto">
       
-      {/* Clean Feed Header */}
-      <div style={{ width: '100%', maxWidth: '1100px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(19, 21, 28, 0.88)', padding: '0.65rem 1.2rem', borderRadius: '8px', border: '1px solid #2d323e' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
-          <span style={{ fontSize: '0.9rem', fontWeight: 600, color: '#f1f5f9' }}>Live Perception ({activeCam})</span>
-          <span style={{ fontSize: '0.72rem', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '0.15rem 0.5rem', borderRadius: '4px', color: '#10b981', fontWeight: 600 }}>
-            MJPEG Stream
-          </span>
-        </div>
-
-        <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center' }}>
-          <button 
-            onClick={() => setShowUrlEdit(prev => !prev)} 
-            style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '0.75rem', cursor: 'pointer', textDecoration: 'underline' }}
-          >
-            {showUrlEdit ? 'Ocultar URL' : 'Configurar URL'}
-          </button>
-          <span style={{ fontSize: '0.75rem', color: '#94a3b8', background: 'rgba(255, 255, 255, 0.04)', padding: '0.2rem 0.5rem', borderRadius: '4px', border: '1px solid #2d323e' }}>
-            {fps} FPS
-          </span>
-        </div>
-      </div>
-
-      {/* Optional Compact Stream Source URL Bar (Hidden by default for clean UI) */}
-      {showUrlEdit && (
-        <div style={{ width: '100%', maxWidth: '1100px', display: 'flex', gap: '0.5rem', alignItems: 'center', backgroundColor: 'rgba(19, 21, 28, 0.88)', padding: '0.4rem 0.8rem', borderRadius: '6px', border: '1px solid #2d323e' }}>
-          <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 500 }}>URL Stream MJPEG:</span>
-          <input 
-            type="text" 
-            value={streamUrl} 
-            onChange={e => { setStreamUrl(e.target.value); setStreamError(false); }}
-            style={{ flex: 1, background: '#090a0f', border: '1px solid #2d323e', color: '#f1f5f9', padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.78rem', outline: 'none' }}
-            placeholder="http://192.168.55.1:8080/mjpeg"
-          />
-        </div>
-      )}
-
-      {/* Main Video Viewport (Con soporte de Pantalla Completa y Orientación Dinámica) */}
-      <div 
-        ref={viewportRef}
-        style={{ 
-          position: 'relative', 
-          width: '100%', 
-          maxWidth: isFullscreen ? 'none' : '1100px', 
-          aspectRatio: isFullscreen ? 'auto' : '16 / 9',
-          height: isFullscreen ? '100vh' : 'auto',
-          maxHeight: isFullscreen ? 'none' : 'calc(100vh - 230px)',
-          backgroundColor: '#000000', 
-          borderRadius: isFullscreen ? '0' : '10px', 
-          overflow: 'hidden', 
-          border: isFullscreen ? 'none' : '1px solid #2d323e',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          boxShadow: isFullscreen ? 'none' : '0 8px 30px rgba(0,0,0,0.6)'
-        }}
-      >
-        {!streamError ? (
-          <img 
-            src={streamUrl} 
-            alt="Hikvision Live Stream" 
-            onError={() => setStreamError(true)}
-            style={{ 
-              width: '100%', 
-              height: '100%', 
-              objectFit: 'contain', 
-              backgroundColor: '#000000',
-              transform: `rotate(${rotation}deg) scaleX(${flipH ? -1 : 1}) scaleY(${flipV ? -1 : 1})`,
-              transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
-            }}
-          />
-        ) : (
-          <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
-            <div style={{ color: '#f1f5f9', fontWeight: 600, fontSize: '1rem', marginBottom: '0.5rem' }}>
-              📡 Esperando Transmisión de Video (`{streamUrl}`)
+      {/* Google Antigravity Card Container */}
+      <div className="w-full max-w-5xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 rounded-3xl p-5 shadow-sm flex flex-col gap-4 transition-all">
+        
+        {/* Card Header with Pill Badges */}
+        <div className="flex flex-wrap justify-between items-center gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-900 dark:text-zinc-100 shadow-sm">
+              <Video size={16} />
             </div>
-            <div style={{ fontSize: '0.8rem', maxWidth: '500px', margin: '0 auto', lineHeight: '1.4' }}>
-              Ingresa la dirección HTTP de la cámara o ejecuta el servidor MJPEG en la Jetson para visualizar el flujo en vivo.
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 tracking-tight leading-none">
+                {t('livePerception')} ({activeCam})
+              </h2>
+              <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-1">YOLO26n Real-time Object Detection Stream</p>
             </div>
+            <span className="ml-1 text-[11px] font-semibold px-3 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200/60 dark:border-zinc-700/60 shadow-sm">
+              MJPEG Stream
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setShowUrlEdit(prev => !prev)} 
+              className="px-3.5 py-1.5 rounded-full text-xs font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 border border-zinc-200/60 dark:border-zinc-700/60 transition-all flex items-center gap-1.5 active:scale-95 shadow-sm"
+            >
+              <Settings2 size={13} />
+              {showUrlEdit ? (language === 'en' ? 'Hide URL' : 'Ocultar URL') : (language === 'en' ? 'Configure URL' : 'Configurar URL')}
+            </button>
+            <span className="text-xs text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 px-3 py-1.5 rounded-full border border-zinc-200/60 dark:border-zinc-700/60 font-semibold shadow-sm">
+              {fps} FPS
+            </span>
+          </div>
+        </div>
+
+        {/* URL Configuration Drawer (Pill Style) */}
+        {showUrlEdit && (
+          <div className="flex flex-wrap gap-2 items-center bg-zinc-50 dark:bg-zinc-800/60 px-4 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-700/80 shadow-inner">
+            <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">Stream URL:</span>
+            <input 
+              type="text" 
+              value={streamUrl} 
+              onChange={e => { setStreamUrl(e.target.value); setStreamError(false); }}
+              className="flex-1 min-w-[260px] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 px-4 py-2 rounded-full text-xs outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600 transition-all font-mono"
+              placeholder="http://192.168.55.1:8080/mjpeg"
+            />
+            <button 
+              onClick={() => setStreamError(false)}
+              className="px-4 py-2 rounded-full text-xs font-semibold bg-zinc-900 text-white dark:bg-white dark:text-zinc-950 hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-all active:scale-95 shadow-sm"
+            >
+              {language === 'en' ? 'Reconnect' : 'Reconectar'}
+            </button>
           </div>
         )}
 
-        {/* HUD Top Info Status */}
-        <div style={{ position: 'absolute', top: '12px', left: '12px', display: 'flex', gap: '0.5rem', alignItems: 'center', pointerEvents: 'none', background: 'rgba(0, 0, 0, 0.65)', padding: '0.35rem 0.7rem', borderRadius: '6px', backdropFilter: 'blur(6px)', border: '1px solid rgba(255, 255, 255, 0.1)', zIndex: 10 }}>
-          <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: !streamError ? '#10b981' : '#ff0055', boxShadow: !streamError ? '0 0 6px #10b981' : '0 0 6px #ff0055' }} />
-          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: !streamError ? '#10b981' : '#ff0055', letterSpacing: '1px' }}>
-            {!streamError ? 'LIVE STREAMING' : 'OFFLINE'}
-          </span>
-          <span style={{ fontSize: '0.75rem', color: '#cbd5e1', marginLeft: '0.5rem' }}>1080p @ {fps}FPS</span>
-          <span style={{ fontSize: '0.7rem', color: '#0284c7', background: 'rgba(2, 132, 199, 0.15)', padding: '0.1rem 0.4rem', borderRadius: '4px', marginLeft: '0.4rem' }}>
-            {rotation}° {flipH ? '| Flip H' : ''} {flipV ? '| Flip V' : ''}
-          </span>
+        {/* Main Video Viewport in Rounded 2XL/3XL Container */}
+        <div 
+          ref={viewportRef}
+          className={`relative w-full bg-zinc-950 flex items-center justify-center transition-all overflow-hidden ${
+            isFullscreen 
+              ? 'fixed inset-0 z-50 h-screen w-screen rounded-none border-none' 
+              : 'aspect-video max-h-[calc(100vh-270px)] rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-lg'
+          }`}
+        >
+          {!streamError ? (
+            <img 
+              src={streamUrl} 
+              alt="Live Stream" 
+              onError={() => setStreamError(true)}
+              className="w-full h-full object-contain bg-zinc-950 transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
+              style={{ 
+                transform: `rotate(${rotation}deg) scaleX(${flipH ? -1 : 1}) scaleY(${flipV ? -1 : 1})`
+              }}
+            />
+          ) : (
+            <div className="p-8 text-center text-zinc-400 flex flex-col items-center justify-center">
+              <div className="w-12 h-12 rounded-full bg-zinc-900 flex items-center justify-center text-zinc-300 mb-3 border border-zinc-800">
+                <Video size={22} />
+              </div>
+              <div className="text-zinc-100 font-semibold text-base mb-1">
+                {language === 'en' ? `Waiting for video stream (${streamUrl})` : `Esperando señal de video (${streamUrl})`}
+              </div>
+              <div className="text-xs text-zinc-400 max-w-md leading-relaxed">
+                {language === 'en'
+                  ? 'Ensure MJPEG streamer on Jetson module is active and reachable on the perimeter network.'
+                  : 'Asegúrate de que el servidor MJPEG en el módulo Jetson esté iniciado y accesible en la red perimetral.'}
+              </div>
+            </div>
+          )}
+
+          {/* Floating Pill HUD: Status Indicator (Top-Left) */}
+          <div className="absolute top-4 left-4 flex gap-2.5 items-center pointer-events-none bg-black/60 backdrop-blur-xl px-3.5 py-1.5 rounded-full border border-white/10 z-10 shadow-lg text-white">
+            <div className={`w-2.5 h-2.5 rounded-full ${!streamError ? 'bg-emerald-400 animate-pulse' : 'bg-red-500'}`} />
+            <span className="text-[11px] font-bold tracking-wider">
+              {!streamError ? (language === 'en' ? 'LIVE' : 'EN VIVO') : 'OFFLINE'}
+            </span>
+            <span className="text-[11px] text-zinc-300 font-medium">1080p @ {fps}FPS</span>
+            <span className="text-[10px] text-zinc-300 bg-white/10 px-2.5 py-0.5 rounded-full font-mono">
+              {rotation}° {flipH ? '| Flip H' : ''} {flipV ? '| Flip V' : ''}
+            </span>
+          </div>
+
+          {/* Floating Pill HUD: Controls Dock (Top-Right) */}
+          <div className="absolute top-4 right-4 flex gap-1 items-center bg-black/60 backdrop-blur-xl p-1.5 rounded-full border border-white/10 z-10 shadow-lg text-white">
+            <button
+              onClick={rotateVideo}
+              title={language === 'en' ? 'Rotate Video (+90°)' : 'Rotar Video (+90°)'}
+              className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-200 hover:text-white hover:bg-white/20 transition-all active:scale-90"
+            >
+              <RotateCw size={15} />
+            </button>
+
+            <button
+              onClick={() => setFlipH(prev => !prev)}
+              title={language === 'en' ? 'Flip Horizontal' : 'Invertir Horizontalmente (Flip H)'}
+              className={`w-8 h-8 rounded-full flex items-center justify-center transition-all active:scale-90 ${flipH ? 'bg-white text-zinc-950 font-bold' : 'text-zinc-200 hover:text-white hover:bg-white/20'}`}
+            >
+              <FlipHorizontal size={15} />
+            </button>
+
+            <button
+              onClick={() => setFlipV(prev => !prev)}
+              title={language === 'en' ? 'Flip Vertical' : 'Invertir Verticalmente (Flip V)'}
+              className={`w-8 h-8 rounded-full flex items-center justify-center transition-all active:scale-90 ${flipV ? 'bg-white text-zinc-950 font-bold' : 'text-zinc-200 hover:text-white hover:bg-white/20'}`}
+            >
+              <FlipVertical size={15} />
+            </button>
+
+            <button
+              onClick={resetOrientation}
+              title={language === 'en' ? 'Reset Orientation (0°)' : 'Restablecer Orientación (0°)'}
+              className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/20 transition-all active:scale-90"
+            >
+              <RefreshCcw size={14} />
+            </button>
+
+            <div className="w-[1px] h-4 bg-white/20 mx-1" />
+
+            <button
+              onClick={toggleFullscreen}
+              title={isFullscreen ? (language === 'en' ? 'Exit Fullscreen (ESC)' : 'Salir de Pantalla Completa (ESC)') : (language === 'en' ? 'Fullscreen' : 'Pantalla Completa')}
+              className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-200 hover:text-white hover:bg-white/20 transition-all active:scale-90"
+            >
+              {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            </button>
+          </div>
+
+          {/* Floating Pill HUD: Source Meta (Bottom-Right) */}
+          <div className="absolute bottom-3 right-4 text-[10px] text-zinc-300 font-mono pointer-events-none bg-black/60 backdrop-blur-xl px-3 py-1 rounded-full border border-white/10 z-10 shadow-md">
+            STREAM: Jetson-PTZ_1 | HIKVISION REAL
+          </div>
         </div>
 
-        {/* Dynamic Video Orientation & Fullscreen Control Toolbar (Top-Right HUD) */}
-        <div style={{ position: 'absolute', top: '12px', right: '12px', display: 'flex', gap: '0.4rem', alignItems: 'center', background: 'rgba(0, 0, 0, 0.65)', padding: '0.35rem 0.5rem', borderRadius: '6px', backdropFilter: 'blur(6px)', border: '1px solid rgba(255, 255, 255, 0.1)', zIndex: 10 }}>
-          <button
-            onClick={rotateVideo}
-            title="Rotar Video (+90°)"
-            style={{
-              background: 'rgba(255, 255, 255, 0.08)',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
-              color: '#f1f5f9',
-              padding: '0.35rem',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = '#0284c7')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)')}
-          >
-            <RotateCw size={15} />
-          </button>
-
-          <button
-            onClick={() => setFlipH(prev => !prev)}
-            title="Invertir Horizontalmente (Flip H)"
-            style={{
-              background: flipH ? '#0284c7' : 'rgba(255, 255, 255, 0.08)',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
-              color: '#f1f5f9',
-              padding: '0.35rem',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'all 0.2s'
-            }}
-          >
-            <FlipHorizontal size={15} />
-          </button>
-
-          <button
-            onClick={() => setFlipV(prev => !prev)}
-            title="Invertir Verticalmente (Flip V)"
-            style={{
-              background: flipV ? '#0284c7' : 'rgba(255, 255, 255, 0.08)',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
-              color: '#f1f5f9',
-              padding: '0.35rem',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'all 0.2s'
-            }}
-          >
-            <FlipVertical size={15} />
-          </button>
-
-          <button
-            onClick={resetOrientation}
-            title="Restablecer Orientación Original (0°)"
-            style={{
-              background: 'rgba(255, 255, 255, 0.08)',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
-              color: '#94a3b8',
-              padding: '0.35rem',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'all 0.2s'
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = '#f1f5f9')}
-            onMouseLeave={(e) => (e.currentTarget.style.color = '#94a3b8')}
-          >
-            <RefreshCcw size={14} />
-          </button>
-
-          <div style={{ width: '1px', height: '18px', backgroundColor: 'rgba(255, 255, 255, 0.2)', margin: '0 0.2rem' }} />
-
-          <button
-            onClick={toggleFullscreen}
-            title={isFullscreen ? "Salir de Pantalla Completa (ESC)" : "Pantalla Completa (Fullscreen)"}
-            style={{
-              background: isFullscreen ? '#0284c7' : 'rgba(255, 255, 255, 0.12)',
-              border: '1px solid rgba(255, 255, 255, 0.25)',
-              color: '#ffffff',
-              padding: '0.35rem',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'all 0.2s'
-            }}
-          >
-            {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-          </button>
-        </div>
-
-        {/* HUD Bottom Info */}
-        <div style={{ position: 'absolute', bottom: '10px', right: '12px', fontSize: '0.7rem', color: '#cbd5e1', fontFamily: 'monospace', pointerEvents: 'none', background: 'rgba(0, 0, 0, 0.65)', padding: '0.2rem 0.5rem', borderRadius: '4px', backdropFilter: 'blur(4px)', border: '1px solid rgba(255, 255, 255, 0.1)', zIndex: 10 }}>
-          STREAM: Jetson-PTZ_1 | HIKVISION REAL
-        </div>
       </div>
     </div>
   );

@@ -30,7 +30,7 @@ export default function CircuitCanvas() {
     window.addEventListener('resize', handleResize);
 
     const gridSize = 50;
-    const colors = ['#64748b', '#94a3b8', '#cbd5e1', '#475569', '#334155'];
+    const colors = ['#71717a', '#a1a1aa', '#d4d4d8', '#52525b', '#3f3f46'];
     const numParticles = 20;
 
     const createParticle = (): Particle => {
@@ -127,15 +127,7 @@ export default function CircuitCanvas() {
   return (
     <canvas
       ref={canvasRef}
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        width: '100vw',
-        height: '100vh',
-        pointerEvents: 'none',
-        zIndex: 0
-      }}
+      className="fixed top-0 left-0 w-screen h-screen pointer-events-none z-0"
     />
   );
 }

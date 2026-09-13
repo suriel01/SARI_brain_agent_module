@@ -5,18 +5,19 @@ from ..database import get_db
 from ..crud import crud
 from ..schemas import schemas
 from .deps import get_current_user
+from ..security import has_perm
 
 router = APIRouter()
 
 @router.get("/", response_model=List[schemas.UserResponse])
 def get_users(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") != "admin":
+    if not has_perm(current_user, "can_manage_users"):
         raise HTTPException(status_code=403, detail="Permiso denegado")
     return crud.get_users(db)
 
 @router.post("/", response_model=schemas.UserResponse)
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") != "admin" and not current_user.get("can_manage_users"):
+    if not has_perm(current_user, "can_manage_users"):
         raise HTTPException(status_code=403, detail="Permiso denegado")
     existing = crud.get_user_by_username(db, user.username)
     if existing:
@@ -25,7 +26,7 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db), current
 
 @router.delete("/{user_id}")
 def delete_user(user_id: int, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") != "admin" and not current_user.get("can_manage_users"):
+    if not has_perm(current_user, "can_manage_users"):
         raise HTTPException(status_code=403, detail="Permiso denegado")
     if current_user.get("id") == user_id:
         raise HTTPException(status_code=400, detail="No puedes eliminar tu propio usuario activo")

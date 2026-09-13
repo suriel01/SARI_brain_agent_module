@@ -20,7 +20,12 @@ RUN pip install --no-cache-dir \
     bcrypt \
     pgvector \
     mcp \
-    nemoguardrails
+    nemoguardrails \
+    psutil \
+    pynvml \
+    paho-mqtt \
+    websockets \
+    pytest
 
 # Copy project files
 COPY backend/app /app/app

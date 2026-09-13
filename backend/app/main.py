@@ -1,11 +1,14 @@
 import os
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 from .database import engine, SessionLocal
 from .models import models
 from .schemas import schemas
 from .crud import crud
-from .routers import auth, chat, hardware, users, alerts
+from .routers import auth, chat, hardware, users, alerts, eyes
 
 from sqlalchemy import text
 
@@ -72,8 +75,55 @@ def startup_event():
         if not threads:
             t = crud.create_thread(db, user_id=admin.id, title="Centro de Comando SARI")
             crud.add_message(db, t.id, role="agent", content="🛡️ Sistema Autónomo de Respuesta a Intrusiones (SARI) activo y escuchando comandos.")
+
+        # Seed default Jetson-PTZ_1 Eye node
+        default_eye = db.query(models.EyeNode).filter(models.EyeNode.node_id == "Jetson-PTZ_1").first()
+        if not default_eye:
+            eye1 = models.EyeNode(
+                node_id="Jetson-PTZ_1",
+                name="Jetson Orin Nano (PTZ 1)",
+                ip="192.168.55.1",
+                stream_url="http://192.168.55.1:8080/mjpeg",
+                yolo_threshold=0.70,
+                is_active=True
+            )
+            db.add(eye1)
+            db.commit()
+            print("Default Jetson-PTZ_1 eye node registered")
     finally:
         db.close()
+
+    # Iniciar cliente MQTT en segundo plano
+    try:
+        from .mqtt.client import start_mqtt_client
+        start_mqtt_client()
+    except Exception as e:
+        print(f"[MQTT] Error starting background client: {e}")
+
+    # Iniciar bot y watchdog de Telegram en segundo plano
+    try:
+        from .telegram.bot import start_telegram_bot
+        from .telegram.watchdog import start_watchdog
+        start_telegram_bot()
+        start_watchdog()
+    except Exception as e:
+        print(f"[Telegram] Error starting bot/watchdog: {e}")
+
+@app.on_event("shutdown")
+def shutdown_event():
+    try:
+        from .mqtt.client import stop_mqtt_client
+        stop_mqtt_client()
+    except Exception as e:
+        print(f"[MQTT] Error stopping background client: {e}")
+
+    try:
+        from .telegram.bot import stop_telegram_bot
+        from .telegram.watchdog import stop_watchdog
+        stop_telegram_bot()
+        stop_watchdog()
+    except Exception as e:
+        print(f"[Telegram] Error stopping bot/watchdog: {e}")
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(auth.router, prefix="/api", tags=["auth"])
@@ -84,6 +134,7 @@ app.include_router(alerts.router, prefix="/api/alert", tags=["alerts"])
 app.include_router(alerts.router, prefix="/api", tags=["alerts"])
 app.include_router(alerts.router, prefix="/alerts", tags=["alerts"])
 app.include_router(hardware.router, prefix="/api/hardware", tags=["hardware"])
+app.include_router(eyes.router, prefix="/api/eyes", tags=["eyes"])
 app.include_router(hardware.router, prefix="/api", tags=["hardware"])
 
 from .ws import manager

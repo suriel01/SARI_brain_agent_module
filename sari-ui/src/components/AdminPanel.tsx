@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react';
-import { ShieldAlert, UserPlus, Users, Trash2 } from 'lucide-react';
+import { UserPlus, Users, Trash2 } from 'lucide-react';
+import { apiFetch, readErrorDetail } from '../api';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface AdminPanelProps {
   token: string;
 }
 
 export default function AdminPanel({ token }: AdminPanelProps) {
+  const { language } = useLanguage();
   const [users, setUsers] = useState<any[]>([]);
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -23,9 +26,7 @@ export default function AdminPanel({ token }: AdminPanelProps) {
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch('http://localhost:7000/api/users', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const res = await apiFetch('/users', token);
       if (res.ok) {
         setUsers(await res.json());
       }
@@ -43,12 +44,8 @@ export default function AdminPanel({ token }: AdminPanelProps) {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('http://localhost:7000/api/users', {
+      const res = await apiFetch('/users', token, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
         body: JSON.stringify({
           username: newUsername,
           password: newPassword,
@@ -72,170 +69,179 @@ export default function AdminPanel({ token }: AdminPanelProps) {
         setCanManageUsers(false);
         fetchUsers();
       } else {
-        const data = await res.json();
-        setError(data.detail || 'Error creating user');
+        setError(await readErrorDetail(res, language === 'en' ? 'Error creating user' : 'Error al crear operador'));
       }
     } catch (e) {
-      setError('Network error');
+      setError(language === 'en' ? 'Network error' : 'Error de red');
     }
     setLoading(false);
   };
 
   const handleDeleteUser = async (userId: number, username: string) => {
-    if (!confirm(`Are you sure you want to delete operator "${username}"?`)) return;
+    const confirmMsg = language === 'en' 
+      ? `Are you sure you want to delete operator "${username}"?` 
+      : `¿Estás seguro de que deseas eliminar al operador "${username}"?`;
+    if (!confirm(confirmMsg)) return;
     try {
-      const res = await fetch(`http://localhost:7000/api/users/${userId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+      const res = await apiFetch(`/users/${userId}`, token, {
+        method: 'DELETE'
       });
       if (res.ok) {
         fetchUsers();
       } else {
-        const data = await res.json();
-        alert(data.detail || 'Error deleting operator');
+        alert(await readErrorDetail(res, language === 'en' ? 'Error deleting operator' : 'Error al eliminar operador'));
       }
     } catch (e) {
-      alert('Network error');
+      alert(language === 'en' ? 'Network error' : 'Error de red');
     }
   };
 
   return (
-    <div style={{ padding: '2rem', height: '100%', overflowY: 'auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
-        <ShieldAlert size={24} color="var(--danger)" />
-        <h2 style={{ margin: 0, color: 'var(--text-main)', letterSpacing: '1px' }}>
-          User Management Panel (SOC)
-        </h2>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '2rem' }}>
+    <div className="p-6 h-full overflow-y-auto text-zinc-900 dark:text-zinc-100 transition-colors">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Create User Form */}
-        <div className="glass-panel" style={{ padding: '1.5rem' }}>
-          <h3 style={{ fontSize: '0.8rem', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <UserPlus size={16} /> Register Operator
+        <div className="lg:col-span-1 bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 rounded-3xl p-6 shadow-sm transition-all">
+          <h3 className="text-[11px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-5 flex items-center gap-2">
+            <UserPlus size={14} /> {language === 'en' ? 'Register New Operator' : 'Registrar Nuevo Operador'}
           </h3>
           
-          <form onSubmit={handleCreateUser} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <form onSubmit={handleCreateUser} className="flex flex-col gap-3.5">
             <input 
               type="text" 
-              placeholder="Username" 
-              className="input-field" 
+              placeholder={language === 'en' ? 'Username' : 'Nombre de usuario'} 
+              className="w-full bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-full px-4 py-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600 transition-all text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 shadow-sm" 
               value={newUsername} 
               onChange={e => setNewUsername(e.target.value)} 
               required
             />
             <input 
               type="password" 
-              placeholder="Password" 
-              className="input-field" 
+              placeholder={language === 'en' ? 'Password' : 'Contraseña'} 
+              className="w-full bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-full px-4 py-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600 transition-all text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 shadow-sm" 
               value={newPassword} 
               onChange={e => setNewPassword(e.target.value)} 
               required
             />
             <select 
-              className="input-field" 
+              className="w-full bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-full px-4 py-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:focus:ring-zinc-600 transition-all cursor-pointer text-zinc-900 dark:text-zinc-100 shadow-sm" 
               value={newRole} 
               onChange={e => setNewRole(e.target.value)}
             >
-              <option value="monitor">Monitor (Custom Permissions)</option>
-              <option value="admin">Administrator (Full Control)</option>
+              <option value="monitor">{language === 'en' ? 'Monitor (Custom Permissions)' : 'Monitor (Permisos Personalizados)'}</option>
+              <option value="admin">{language === 'en' ? 'Administrator (Full Access)' : 'Administrador (Control Total)'}</option>
             </select>
 
             {/* Permissions Matrix */}
             {newRole !== 'admin' && (
-              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.8rem', borderRadius: '6px', fontSize: '0.8rem' }}>
-                <div style={{ color: '#8b949e', marginBottom: '0.5rem', fontWeight: 600 }}>Granular Permissions:</div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={canCreateChats} onChange={e => setCanCreateChats(e.target.checked)} />
-                  Create Chats
+              <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl text-xs border border-zinc-200/80 dark:border-zinc-700/60 mt-1 shadow-inner">
+                <div className="text-zinc-500 dark:text-zinc-400 mb-3 font-semibold text-[11px] uppercase tracking-wide">
+                  {language === 'en' ? 'Granular Permissions:' : 'Permisos Granulares:'}
+                </div>
+                <label className="flex items-center gap-2 mb-2 cursor-pointer text-zinc-700 dark:text-zinc-300 font-medium hover:text-zinc-950 dark:hover:text-white transition-colors">
+                  <input type="checkbox" className="accent-zinc-900 dark:accent-white w-3.5 h-3.5" checked={canCreateChats} onChange={e => setCanCreateChats(e.target.checked)} />
+                  {language === 'en' ? 'Create chat threads' : 'Crear conversaciones'}
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={canDeleteChats} onChange={e => setCanDeleteChats(e.target.checked)} />
-                  Delete Chats
+                <label className="flex items-center gap-2 mb-2 cursor-pointer text-zinc-700 dark:text-zinc-300 font-medium hover:text-zinc-950 dark:hover:text-white transition-colors">
+                  <input type="checkbox" className="accent-zinc-900 dark:accent-white w-3.5 h-3.5" checked={canDeleteChats} onChange={e => setCanDeleteChats(e.target.checked)} />
+                  {language === 'en' ? 'Delete chat threads' : 'Eliminar conversaciones'}
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={canRenameChats} onChange={e => setCanRenameChats(e.target.checked)} />
-                  Rename Chats
+                <label className="flex items-center gap-2 mb-2 cursor-pointer text-zinc-700 dark:text-zinc-300 font-medium hover:text-zinc-950 dark:hover:text-white transition-colors">
+                  <input type="checkbox" className="accent-zinc-900 dark:accent-white w-3.5 h-3.5" checked={canRenameChats} onChange={e => setCanRenameChats(e.target.checked)} />
+                  {language === 'en' ? 'Rename chat threads' : 'Renombrar conversaciones'}
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={canControlHardware} onChange={e => setCanControlHardware(e.target.checked)} />
-                  Hardware / Alarm Control
+                <label className="flex items-center gap-2 mb-2 cursor-pointer text-zinc-700 dark:text-zinc-300 font-medium hover:text-zinc-950 dark:hover:text-white transition-colors">
+                  <input type="checkbox" className="accent-zinc-900 dark:accent-white w-3.5 h-3.5" checked={canControlHardware} onChange={e => setCanControlHardware(e.target.checked)} />
+                  {language === 'en' ? 'Tactical hardware control (Siren / Gates)' : 'Control de hardware táctico (Sirena / Accesos)'}
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={canManageUsers} onChange={e => setCanManageUsers(e.target.checked)} />
-                  Manage Users
+                <label className="flex items-center gap-2 cursor-pointer text-zinc-700 dark:text-zinc-300 font-medium hover:text-zinc-950 dark:hover:text-white transition-colors">
+                  <input type="checkbox" className="accent-zinc-900 dark:accent-white w-3.5 h-3.5" checked={canManageUsers} onChange={e => setCanManageUsers(e.target.checked)} />
+                  {language === 'en' ? 'Manage operators' : 'Gestionar operadores'}
                 </label>
               </div>
             )}
 
-            {error && <div style={{ color: 'var(--danger)', fontSize: '0.85rem' }}>{error}</div>}
+            {error && <div className="text-red-600 dark:text-red-400 text-xs font-semibold px-2">{error}</div>}
 
-            <button type="submit" className="btn btn-primary" disabled={loading}>
-              {loading ? 'Creating...' : 'Register Operator'}
+            <button 
+              type="submit" 
+              className="w-full bg-zinc-900 dark:bg-white text-white dark:text-zinc-950 font-semibold py-2.5 px-5 rounded-full mt-2 shadow-sm hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-all text-xs active:scale-95 disabled:opacity-50" 
+              disabled={loading}
+            >
+              {loading ? (language === 'en' ? 'Registering...' : 'Registrando...') : (language === 'en' ? 'Register Operator' : 'Registrar Operador')}
             </button>
           </form>
         </div>
 
         {/* User List */}
-        <div className="glass-panel" style={{ padding: '1.5rem' }}>
-          <h3 style={{ fontSize: '0.8rem', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Users size={16} /> Active Operators
+        <div className="lg:col-span-2 bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 rounded-3xl p-6 shadow-sm transition-all flex flex-col">
+          <h3 className="text-[11px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-5 flex items-center gap-2">
+            <Users size={14} /> {language === 'en' ? 'Active Operators in the System' : 'Operadores Activos en el Sistema'}
           </h3>
           
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #30363d', textAlign: 'left', color: '#8b949e' }}>
-                <th style={{ padding: '0.8rem' }}>ID</th>
-                <th style={{ padding: '0.8rem' }}>User</th>
-                <th style={{ padding: '0.8rem' }}>Role</th>
-                <th style={{ padding: '0.8rem' }}>Specific Permissions</th>
-                <th style={{ padding: '0.8rem' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map(u => (
-                <tr key={u.id} style={{ borderBottom: '1px solid rgba(48, 54, 61, 0.5)' }}>
-                  <td style={{ padding: '0.8rem', color: 'var(--text-muted)' }}>#{u.id}</td>
-                  <td style={{ padding: '0.8rem', color: 'var(--text-main)', fontWeight: 600 }}>{u.username}</td>
-                  <td style={{ padding: '0.8rem' }}>
-                    <span style={{ 
-                      padding: '0.2rem 0.5rem', 
-                      borderRadius: '4px', 
-                      background: u.role === 'admin' ? 'var(--danger-glow)' : 'var(--primary-glow)',
-                      color: u.role === 'admin' ? 'var(--danger)' : 'var(--primary)',
-                      textTransform: 'uppercase',
-                      fontSize: '0.75rem',
-                      letterSpacing: '1px'
-                    }}>
-                      {u.role}
-                    </span>
-                  </td>
-                  <td style={{ padding: '0.8rem', color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                    {u.role === 'admin' ? (
-                      <span style={{ color: 'var(--primary)' }}>Full Access</span>
-                    ) : (
-                      <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
-                        {u.can_create_chats && <span className="badge">Create</span>}
-                        {u.can_delete_chats && <span className="badge">Delete</span>}
-                        {u.can_rename_chats && <span className="badge">Rename</span>}
-                        {u.can_control_hardware && <span className="badge">Hardware</span>}
-                        {!u.can_create_chats && !u.can_delete_chats && !u.can_rename_chats && !u.can_control_hardware && <span>Read-Only</span>}
-                      </div>
-                    )}
-                  </td>
-                  <td style={{ padding: '0.8rem' }}>
-                    {u.role !== 'admin' && (
-                      <Trash2 
-                        size={16} 
-                        onClick={() => handleDeleteUser(u.id, u.username)}
-                        style={{ cursor: 'pointer', color: 'var(--danger)' }} 
-                      />
-                    )}
-                  </td>
+          <div className="overflow-x-auto border border-zinc-200 dark:border-zinc-800 rounded-2xl">
+            <table className="w-full border-collapse text-xs text-left">
+              <thead>
+                <tr className="border-b border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-800/50">
+                  <th className="p-3 font-semibold">ID</th>
+                  <th className="p-3 font-semibold">{language === 'en' ? 'User' : 'Usuario'}</th>
+                  <th className="p-3 font-semibold">{language === 'en' ? 'Role' : 'Rol'}</th>
+                  <th className="p-3 font-semibold">{language === 'en' ? 'Assigned Permissions' : 'Permisos Asignados'}</th>
+                  <th className="p-3 font-semibold text-right">{language === 'en' ? 'Action' : 'Acción'}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {users.map(u => (
+                  <tr key={u.id} className="border-b border-zinc-100 dark:border-zinc-800/50 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors">
+                    <td className="p-3 text-zinc-400 font-mono">#{u.id}</td>
+                    <td className="p-3 text-zinc-900 dark:text-zinc-100 font-semibold">{u.username}</td>
+                    <td className="p-3">
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                        u.role === 'admin' 
+                          ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-950' 
+                          : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700'
+                      }`}>
+                        {u.role}
+                      </span>
+                    </td>
+                    <td className="p-3 text-zinc-500 dark:text-zinc-400 text-xs">
+                      {u.role === 'admin' ? (
+                        <span className="text-zinc-900 dark:text-zinc-100 font-semibold text-[11px]">
+                          {language === 'en' ? 'Full Access (Superuser)' : 'Acceso Total (Superusuario)'}
+                        </span>
+                      ) : (
+                        <div className="flex gap-1 flex-wrap">
+                          {u.can_create_chats && <span className="bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 px-2 py-0.5 rounded-full text-[10px] font-medium border border-zinc-200 dark:border-zinc-700">Chats</span>}
+                          {u.can_delete_chats && <span className="bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 px-2 py-0.5 rounded-full text-[10px] font-medium border border-zinc-200 dark:border-zinc-700">{language === 'en' ? 'Delete' : 'Borrar'}</span>}
+                          {u.can_rename_chats && <span className="bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 px-2 py-0.5 rounded-full text-[10px] font-medium border border-zinc-200 dark:border-zinc-700">{language === 'en' ? 'Rename' : 'Renombrar'}</span>}
+                          {u.can_control_hardware && <span className="bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 px-2 py-0.5 rounded-full text-[10px] font-medium border border-zinc-200 dark:border-zinc-700">Hardware</span>}
+                          {u.can_manage_users && <span className="bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 px-2 py-0.5 rounded-full text-[10px] font-medium border border-zinc-200 dark:border-zinc-700">{language === 'en' ? 'Users' : 'Usuarios'}</span>}
+                          {!u.can_create_chats && !u.can_delete_chats && !u.can_rename_chats && !u.can_control_hardware && !u.can_manage_users && <span className="italic text-[11px]">{language === 'en' ? 'Read-only' : 'Solo Lectura'}</span>}
+                        </div>
+                      )}
+                    </td>
+                    <td className="p-3 text-right">
+                      {u.role !== 'admin' && (
+                        <button 
+                          onClick={() => handleDeleteUser(u.id, u.username)}
+                          className="w-7 h-7 rounded-full flex items-center justify-center text-zinc-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-all ml-auto"
+                          title={language === 'en' ? 'Delete Operator' : 'Eliminar Operador'}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {users.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="p-6 text-center text-zinc-400 dark:text-zinc-500 italic">
+                      {language === 'en' ? 'No operators registered in database.' : 'No hay operadores registrados en la base de datos.'}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
