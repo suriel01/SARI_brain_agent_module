@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ShieldAlert, Lock } from 'lucide-react';
+import { ShieldAlert } from 'lucide-react';
 import { API_BASE } from '../config';
 import { useLanguage } from '../i18n/LanguageContext';
 
@@ -46,52 +46,39 @@ export default function Login({ onLogin }: LoginProps) {
   return (
     <div className="flex min-h-screen w-full bg-white text-zinc-900 font-sans selection:bg-zinc-900 selection:text-white">
       
-      {/* Left Side: Full Logo Background Covering the Entire Pane (Hidden on mobile) */}
+      {/* Left Side: SARI Logo occupies the background, unobstructed */}
       <div 
-        className="hidden lg:flex w-1/2 relative flex-col justify-between p-12 overflow-hidden bg-cover bg-center bg-no-repeat border-r border-zinc-200 shadow-2xl"
+        className="hidden lg:flex w-1/2 relative flex-col justify-end p-12 overflow-hidden bg-black bg-no-repeat border-r border-zinc-200 shadow-2xl"
         style={{
-          backgroundImage: "url('/sari_logo.jpeg')"
+          backgroundImage: "url('/sari_logo.jpeg')",
+          backgroundSize: "cover",
+          backgroundPosition: "center 12%"
         }}
       >
-        {/* Cinematic contrast overlay to keep the full background logo prominent while enhancing text readability */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-black/50 pointer-events-none" />
-        <div className="absolute inset-0 bg-radial-at-c from-transparent via-black/20 to-black/60 pointer-events-none" />
+        {/* Subtle vignette at the bottom to ensure text readability without any boxed container */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/30 to-transparent pointer-events-none" />
 
-        {/* Top Header: Clean Typography (Small logo removed) */}
-        <div className="relative z-10 flex items-center gap-3">
-          <span className="text-2xl font-black tracking-[0.25em] text-white drop-shadow-md">SARI</span>
-          <span className="text-[10px] text-zinc-300 font-mono tracking-widest bg-white/10 px-2.5 py-0.5 rounded-full border border-white/20 backdrop-blur-md">
-            AUTONOMOUS AGENT
-          </span>
-        </div>
-
-        {/* Center/Bottom Content with Frosted Glass Container for High Readability */}
-        <div className="relative z-10 max-w-md mb-2 bg-black/70 backdrop-blur-md p-6 rounded-3xl border border-white/15 shadow-2xl">
-          <h1 className="text-3xl font-light mb-3 tracking-wide leading-tight text-zinc-200">
+        {/* Bottom Text Content (No box/cuadro, positioned cleanly at the bottom below the logo) */}
+        <div className="relative z-10 max-w-lg mb-2 text-left">
+          <h1 className="text-2xl sm:text-3xl font-light mb-2.5 tracking-wide leading-tight text-zinc-200">
             {language === 'en' ? (
-              <>Autonomous <br/><span className="font-bold text-white">Intrusion Response System</span></>
+              <>Autonomous <span className="font-bold text-white">Intrusion Response System</span></>
             ) : (
-              <>Sistema Autónomo de <br/><span className="font-bold text-white">Respuesta a Intrusiones</span></>
+              <>Sistema Autónomo de <span className="font-bold text-white">Respuesta a Intrusiones</span></>
             )}
           </h1>
-          <p className="text-zinc-300 text-xs leading-relaxed mb-5 font-medium">
+          <p className="text-zinc-400 text-xs sm:text-sm leading-relaxed font-medium max-w-md">
             {language === 'en'
               ? 'Restricted access. Authorization required for tactical controls, perimeter telemetry, and Security Operations Center oversight.'
               : 'Acceso restringido. Autorización requerida para la manipulación de controles tácticos, telemetría perimetral y supervisión del Security Operations Center.'}
           </p>
-          
-          {/* Footer status (SYS_CORE_ONLINE removed, keeping only Encrypted Channel) */}
-          <div className="flex items-center gap-2 text-[11px] font-mono text-zinc-200 uppercase tracking-widest bg-white/10 px-3 py-1.5 rounded-full border border-white/20 w-fit">
-            <Lock size={12} className="text-emerald-400" />
-            <span className="font-semibold">ENCRYPTED_CHANNEL</span>
-          </div>
         </div>
       </div>
 
       {/* Right Side: Login Form (Always in Light Mode) */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8 sm:p-12 relative bg-white">
         
-        {/* Mobile Header (Small logo removed) */}
+        {/* Mobile Header */}
         <div className="lg:hidden absolute top-8 left-8 flex items-center gap-2">
           <span className="text-xl font-black tracking-[0.2em] text-zinc-900">SARI</span>
           <span className="text-[9px] text-zinc-500 font-mono tracking-widest bg-zinc-100 px-2 py-0.5 rounded-full border border-zinc-200">
@@ -101,7 +88,7 @@ export default function Login({ onLogin }: LoginProps) {
 
         <div className="w-full max-w-[400px] animate-[fadeIn_0.4s_ease-out]">
           
-          {/* Header Title (Small logo removed above SOC Terminal) */}
+          {/* Header Title (No small logo) */}
           <div className="mb-8">
             <h2 className="text-3xl font-bold tracking-tight text-zinc-900 mb-2">SOC Terminal</h2>
             <p className="text-sm text-zinc-500 font-medium">
@@ -166,7 +153,7 @@ export default function Login({ onLogin }: LoginProps) {
             </div>
           </form>
 
-          {/* Footer: Version updated to SARI OS V0.5 and Secure Terminal indicator */}
+          {/* Footer: SARI OS V0.5 and Secure Terminal */}
           <div className="mt-12 pt-6 border-t border-zinc-200 flex items-center justify-between text-[11px] uppercase tracking-widest text-zinc-400 font-mono font-semibold">
             <span>SARI OS V0.5</span>
             <span className="flex items-center gap-2 text-zinc-500">
