@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ShieldAlert, Terminal, Lock } from 'lucide-react';
+import { ShieldAlert, Lock } from 'lucide-react';
 import { API_BASE } from '../config';
 import { useLanguage } from '../i18n/LanguageContext';
 
@@ -44,76 +44,67 @@ export default function Login({ onLogin }: LoginProps) {
   };
 
   return (
-    <div className="flex min-h-screen w-full bg-zinc-100 dark:bg-black font-sans transition-colors duration-300 selection:bg-black selection:text-white dark:selection:bg-white dark:selection:text-black">
+    <div className="flex min-h-screen w-full bg-white text-zinc-900 font-sans selection:bg-zinc-900 selection:text-white">
       
-      {/* Left Side: Branding / Visuals (Hidden on mobile) */}
-      <div className="hidden lg:flex w-1/2 relative bg-black flex-col justify-between p-12 overflow-hidden border-r border-zinc-200 dark:border-zinc-800 shadow-[4px_0_24px_rgba(0,0,0,0.02)] dark:shadow-none">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.08),_transparent_40%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_left,_rgba(255,255,255,0.05),_transparent_50%)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_60%_at_50%_50%,#000_70%,transparent_100%)]" />
+      {/* Left Side: Full Logo Background Covering the Entire Pane (Hidden on mobile) */}
+      <div 
+        className="hidden lg:flex w-1/2 relative flex-col justify-between p-12 overflow-hidden bg-cover bg-center bg-no-repeat border-r border-zinc-200 shadow-2xl"
+        style={{
+          backgroundImage: "url('/sari_logo.jpeg')"
+        }}
+      >
+        {/* Cinematic contrast overlay to keep the full background logo prominent while enhancing text readability */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-black/50 pointer-events-none" />
+        <div className="absolute inset-0 bg-radial-at-c from-transparent via-black/20 to-black/60 pointer-events-none" />
 
-        {/* Top Logo */}
-        <div className="relative z-10 flex items-center gap-3.5">
-          <div className="bg-white p-1.5 rounded-2xl shadow-xl border border-white/20">
-            <img 
-              src="/sari_logo.jpeg" 
-              alt="SARI Logo" 
-              className="w-9 h-9 object-contain rounded-lg" 
-            />
-          </div>
-          <div>
-            <span className="text-2xl font-black tracking-[0.2em] text-white">SARI</span>
-            <div className="text-[10px] text-zinc-400 font-mono tracking-widest leading-none mt-0.5">AUTONOMOUS AGENT</div>
-          </div>
+        {/* Top Header: Clean Typography (Small logo removed) */}
+        <div className="relative z-10 flex items-center gap-3">
+          <span className="text-2xl font-black tracking-[0.25em] text-white drop-shadow-md">SARI</span>
+          <span className="text-[10px] text-zinc-300 font-mono tracking-widest bg-white/10 px-2.5 py-0.5 rounded-full border border-white/20 backdrop-blur-md">
+            AUTONOMOUS AGENT
+          </span>
         </div>
 
-        {/* Center/Bottom Content */}
-        <div className="relative z-10 max-w-lg mb-8">
-          <h1 className="text-[2.75rem] font-light mb-6 tracking-wide leading-[1.1] text-zinc-400">
+        {/* Center/Bottom Content with Frosted Glass Container for High Readability */}
+        <div className="relative z-10 max-w-md mb-2 bg-black/70 backdrop-blur-md p-6 rounded-3xl border border-white/15 shadow-2xl">
+          <h1 className="text-3xl font-light mb-3 tracking-wide leading-tight text-zinc-200">
             {language === 'en' ? (
               <>Autonomous <br/><span className="font-bold text-white">Intrusion Response System</span></>
             ) : (
               <>Sistema Autónomo de <br/><span className="font-bold text-white">Respuesta a Intrusiones</span></>
             )}
           </h1>
-          <p className="text-zinc-400 text-sm leading-relaxed mb-10 max-w-md font-medium">
+          <p className="text-zinc-300 text-xs leading-relaxed mb-5 font-medium">
             {language === 'en'
               ? 'Restricted access. Authorization required for tactical controls, perimeter telemetry, and Security Operations Center oversight.'
               : 'Acceso restringido. Autorización requerida para la manipulación de controles tácticos, telemetría perimetral y supervisión del Security Operations Center.'}
           </p>
           
-          <div className="flex items-center gap-4 text-xs font-mono text-zinc-500 uppercase tracking-widest">
-            <div className="flex items-center gap-2"><Terminal size={14} /> SYS_CORE_ONLINE</div>
-            <div className="w-1.5 h-1.5 rounded-full bg-zinc-700" />
-            <div className="flex items-center gap-2 text-white"><Lock size={14} /> ENCRYPTED_CHANNEL</div>
+          {/* Footer status (SYS_CORE_ONLINE removed, keeping only Encrypted Channel) */}
+          <div className="flex items-center gap-2 text-[11px] font-mono text-zinc-200 uppercase tracking-widest bg-white/10 px-3 py-1.5 rounded-full border border-white/20 w-fit">
+            <Lock size={12} className="text-emerald-400" />
+            <span className="font-semibold">ENCRYPTED_CHANNEL</span>
           </div>
         </div>
       </div>
 
-      {/* Right Side: Login Form */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 relative">
-        <div className="lg:hidden absolute top-8 left-8 flex items-center gap-3">
-          <div className="bg-white p-1 rounded-xl shadow-md border border-zinc-200">
-            <img 
-              src="/sari_logo.jpeg" 
-              alt="SARI Logo" 
-              className="w-7 h-7 object-contain rounded-md" 
-            />
-          </div>
-          <span className="text-xl font-black tracking-[0.2em] text-zinc-900 dark:text-white">SARI</span>
+      {/* Right Side: Login Form (Always in Light Mode) */}
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 sm:p-12 relative bg-white">
+        
+        {/* Mobile Header (Small logo removed) */}
+        <div className="lg:hidden absolute top-8 left-8 flex items-center gap-2">
+          <span className="text-xl font-black tracking-[0.2em] text-zinc-900">SARI</span>
+          <span className="text-[9px] text-zinc-500 font-mono tracking-widest bg-zinc-100 px-2 py-0.5 rounded-full border border-zinc-200">
+            SOC
+          </span>
         </div>
 
-        <div className="w-full max-w-[400px] animate-[fadeIn_0.5s_ease-out]">
+        <div className="w-full max-w-[400px] animate-[fadeIn_0.4s_ease-out]">
+          
+          {/* Header Title (Small logo removed above SOC Terminal) */}
           <div className="mb-8">
-            <div className="w-12 h-12 bg-white p-1 rounded-2xl shadow-md border border-zinc-200 dark:border-zinc-800 mb-4 flex items-center justify-center">
-              <img 
-                src="/sari_logo.jpeg" 
-                alt="SARI Logo" 
-                className="w-10 h-10 object-contain rounded-xl" 
-              />
-            </div>
-            <h2 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-white mb-2">SOC Terminal</h2>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400 font-medium">
+            <h2 className="text-3xl font-bold tracking-tight text-zinc-900 mb-2">SOC Terminal</h2>
+            <p className="text-sm text-zinc-500 font-medium">
               {language === 'en'
                 ? 'Enter your operator credentials to access the console.'
                 : 'Ingrese sus credenciales de operador para iniciar sesión.'}
@@ -121,7 +112,7 @@ export default function Login({ onLogin }: LoginProps) {
           </div>
 
           {error && (
-            <div className="bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 p-4 rounded-xl mb-8 text-sm flex items-start gap-3 border border-red-200 dark:border-red-900/50 shadow-sm">
+            <div className="bg-red-50 text-red-600 p-4 rounded-2xl mb-6 text-sm flex items-start gap-3 border border-red-200 shadow-sm">
               <ShieldAlert size={18} className="shrink-0 mt-0.5" />
               <span className="font-semibold">{error}</span>
             </div>
@@ -129,26 +120,27 @@ export default function Login({ onLogin }: LoginProps) {
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 ml-2">
+              <label className="text-xs font-semibold text-zinc-600 ml-2">
                 {language === 'en' ? 'Identifier' : 'Identificador'}
               </label>
               <input 
                 type="text" 
-                className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-full px-5 py-3 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-white focus:bg-white dark:focus:bg-zinc-900 transition-all shadow-sm placeholder:text-zinc-400 dark:placeholder:text-zinc-600" 
+                className="w-full bg-zinc-50 border border-zinc-200 rounded-full px-5 py-3.5 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all shadow-sm placeholder:text-zinc-400 font-medium" 
                 value={username} 
                 onChange={e => setUsername(e.target.value)}
                 placeholder={language === 'en' ? 'Username' : 'Nombre de usuario'}
                 required
+                autoFocus
               />
             </div>
             
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 ml-2">
+              <label className="text-xs font-semibold text-zinc-600 ml-2">
                 {language === 'en' ? 'Password' : 'Contraseña'}
               </label>
               <input 
                 type="password" 
-                className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-full px-5 py-3 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-white focus:bg-white dark:focus:bg-zinc-900 transition-all shadow-sm placeholder:text-zinc-400 dark:placeholder:text-zinc-600" 
+                className="w-full bg-zinc-50 border border-zinc-200 rounded-full px-5 py-3.5 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:bg-white transition-all shadow-sm placeholder:text-zinc-400 font-medium" 
                 value={password} 
                 onChange={e => setPassword(e.target.value)}
                 placeholder="••••••••"
@@ -156,15 +148,15 @@ export default function Login({ onLogin }: LoginProps) {
               />
             </div>
             
-            <div className="pt-4">
+            <div className="pt-3">
               <button 
                 type="submit" 
-                className="w-full flex justify-center items-center rounded-full bg-zinc-900 dark:bg-white px-6 py-3.5 text-sm font-semibold text-white dark:text-zinc-950 transition-all hover:bg-zinc-800 dark:hover:bg-zinc-200 active:scale-95 shadow-sm hover:shadow disabled:opacity-50" 
+                className="w-full flex justify-center items-center rounded-full bg-zinc-900 px-6 py-3.5 text-sm font-semibold text-white transition-all hover:bg-zinc-800 active:scale-95 shadow-md shadow-zinc-900/10 hover:shadow-lg disabled:opacity-50 cursor-pointer" 
                 disabled={loading}
               >
                 {loading ? (
                   <span className="flex items-center gap-3">
-                    <div className="h-4 w-4 rounded-full border-2 border-white/30 dark:border-zinc-950/30 border-t-white dark:border-t-zinc-950 animate-spin" />
+                    <div className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
                     {language === 'en' ? 'Authenticating...' : 'Autenticando...'}
                   </span>
                 ) : (
@@ -174,10 +166,11 @@ export default function Login({ onLogin }: LoginProps) {
             </div>
           </form>
 
-          <div className="mt-14 pt-8 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-between text-[11px] uppercase tracking-widest text-zinc-400 dark:text-zinc-500 font-mono font-semibold">
-            <span>SARI OS v2.0.4</span>
-            <span className="flex items-center gap-2">
-              <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
+          {/* Footer: Version updated to SARI OS V0.5 and Secure Terminal indicator */}
+          <div className="mt-12 pt-6 border-t border-zinc-200 flex items-center justify-between text-[11px] uppercase tracking-widest text-zinc-400 font-mono font-semibold">
+            <span>SARI OS V0.5</span>
+            <span className="flex items-center gap-2 text-zinc-500">
+              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
               {language === 'en' ? 'Secure Terminal' : 'Terminal Segura'}
             </span>
           </div>

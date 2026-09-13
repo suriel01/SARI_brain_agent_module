@@ -27,15 +27,21 @@ function MainContent() {
     return localStorage.getItem('sari_theme') === 'dark' || (!localStorage.getItem('sari_theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
   });
 
+  // Only apply dark theme to the document when logged into the modules interface.
+  // The login screen must always remain in light mode.
   useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('sari_theme', 'dark');
+    if (token && role) {
+      if (isDarkMode) {
+        document.documentElement.classList.add('dark');
+        localStorage.setItem('sari_theme', 'dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+        localStorage.setItem('sari_theme', 'light');
+      }
     } else {
       document.documentElement.classList.remove('dark');
-      localStorage.setItem('sari_theme', 'light');
     }
-  }, [isDarkMode]);
+  }, [isDarkMode, token, role]);
 
   useEffect(() => {
     if (token && role) {
@@ -71,7 +77,7 @@ function MainContent() {
   const toggleTheme = () => setIsDarkMode(prev => !prev);
 
   return (
-    <div className="min-h-screen bg-zinc-100 text-zinc-900 dark:bg-black dark:text-zinc-100 font-sans transition-colors duration-200">
+    <div className={`min-h-screen font-sans transition-colors duration-200 ${token && role ? (isDarkMode ? 'dark bg-black text-zinc-100' : 'bg-zinc-100 text-zinc-900') : 'bg-white text-zinc-900'}`}>
       {token && role ? (
         <Dashboard 
           token={token} 
