@@ -4,7 +4,7 @@ import {
   Maximize2, Minimize2, RefreshCcw, Settings2, Cpu, 
   Activity, Thermometer, HardDrive, ShieldAlert, Download, 
   Play, Circle, Trash2, Camera, Lock, CheckCircle2, AlertCircle, X,
-  ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Focus, ZoomIn, ZoomOut, Target, Move, Navigation
+  ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Focus, ZoomIn, ZoomOut, Target
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext';
 import ConnectEyeModal from './ConnectEyeModal';
@@ -103,10 +103,14 @@ export default function EyesModule({ token, permissions, requestPin: _requestPin
   const [trackingEnabled, setTrackingEnabled] = useState<boolean>(true);
   const [ptzAction, setPtzAction] = useState<string | null>(null);
   const [ptzFeedback, setPtzFeedback] = useState<string | null>(null);
-  const [isDragging, setIsDragging] = useState<boolean>(false);
-  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
-  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const dragThrottleTimer = useRef<any>(null);
+
+  // Virtual Analog Joystick State
+  const [isJoystickActive, setIsJoystickActive] = useState<boolean>(false);
+  const [joystickOrigin, setJoystickOrigin] = useState<{ x: number; y: number } | null>(null);
+  const [joystickKnob, setJoystickKnob] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const joystickIntervalRef = useRef<any>(null);
+  const joystickKnobRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const JOYSTICK_MAX_RADIUS = 46;
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const streamImgRef = useRef<HTMLImageElement>(null);
@@ -394,32 +398,70 @@ export default function EyesModule({ token, permissions, requestPin: _requestPin
     }
   };
 
-  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if ((e.target as HTMLElement).closest('button, input')) return;
-    setIsDragging(true);
-    setDragStart({ x: e.clientX, y: e.clientY });
-    setDragOffset({ x: 0, y: 0 });
+  const startContinuousPtz = () => {
+    if (joystickIntervalRef.current) return;
+    joystickIntervalRef.current = setInterval(() => {
+      const { x, y } = joystickKnobRef.current;
+      const dist = Math.hypot(x, y);
+      if (dist > 6) { // Deadzone of 6px
+        const normalizedPan = (x / JOYSTICK_MAX_RADIUS) * 10;
+        const normalizedTilt = -(y / JOYSTICK_MAX_RADIUS) * 10;
+        handleSendPtz('drag', normalizedPan, normalizedTilt);
+      }
+    }, 150);
   };
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isDragging || !dragStart) return;
-    const dx = e.clientX - dragStart.x;
-    const dy = e.clientY - dragStart.y;
-    setDragOffset({ x: dx, y: dy });
-
-    if (!dragThrottleTimer.current && (Math.abs(dx) > 15 || Math.abs(dy) > 15)) {
-      dragThrottleTimer.current = setTimeout(() => {
-        dragThrottleTimer.current = null;
-      }, 160);
-      handleSendPtz('drag', dx / 6, -dy / 6);
+  const stopContinuousPtz = () => {
+    if (joystickIntervalRef.current) {
+      clearInterval(joystickIntervalRef.current);
+      joystickIntervalRef.current = null;
     }
   };
 
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest('button, input, .ptz-overlay-control')) return;
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const relX = e.clientX - rect.left;
+    const relY = e.clientY - rect.top;
+
+    setIsJoystickActive(true);
+    setJoystickOrigin({ x: relX, y: relY });
+    setJoystickKnob({ x: 0, y: 0 });
+    joystickKnobRef.current = { x: 0, y: 0 };
+    startContinuousPtz();
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isJoystickActive || !joystickOrigin || !viewportRef.current) return;
+    const rect = viewportRef.current.getBoundingClientRect();
+    const currentRelX = e.clientX - rect.left;
+    const currentRelY = e.clientY - rect.top;
+
+    const rawDx = currentRelX - joystickOrigin.x;
+    const rawDy = currentRelY - joystickOrigin.y;
+    const distance = Math.hypot(rawDx, rawDy);
+
+    let knobX = rawDx;
+    let knobY = rawDy;
+
+    if (distance > JOYSTICK_MAX_RADIUS) {
+      knobX = (rawDx / distance) * JOYSTICK_MAX_RADIUS;
+      knobY = (rawDy / distance) * JOYSTICK_MAX_RADIUS;
+    }
+
+    setJoystickKnob({ x: knobX, y: knobY });
+    joystickKnobRef.current = { x: knobX, y: knobY };
+  };
+
   const handleMouseUp = () => {
-    if (isDragging) {
-      setIsDragging(false);
-      setDragStart(null);
-      setDragOffset({ x: 0, y: 0 });
+    if (isJoystickActive) {
+      stopContinuousPtz();
+      setIsJoystickActive(false);
+      setJoystickOrigin(null);
+      setJoystickKnob({ x: 0, y: 0 });
+      joystickKnobRef.current = { x: 0, y: 0 };
     }
   };
 
@@ -570,13 +612,47 @@ export default function EyesModule({ token, permissions, requestPin: _requestPin
                 : 'aspect-video rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-inner'
             }`}
           >
-            {/* Visual Feedback on Dragging */}
-            {isDragging && (
-              <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-20">
-                <div className="bg-black/80 backdrop-blur-md px-4 py-2 rounded-2xl border border-emerald-500/50 shadow-2xl flex items-center gap-2.5 text-white animate-[fadeIn_0.15s_ease-out]">
-                  <Move size={16} className="text-emerald-400 animate-pulse" />
-                  <div className="text-xs font-mono">
-                    <span className="text-emerald-400 font-bold">ORIENTACIÓN PTZ:</span> Pan {dragOffset.x > 0 ? `+${Math.round(dragOffset.x)}px` : `${Math.round(dragOffset.x)}px`} | Tilt {dragOffset.y < 0 ? `+${Math.round(-dragOffset.y)}px` : `${Math.round(-dragOffset.y)}px`}
+            {/* Virtual Analog Joystick Overlay (Follows Click & Hold) */}
+            {isJoystickActive && joystickOrigin && (
+              <div
+                className="absolute pointer-events-none z-30 -translate-x-1/2 -translate-y-1/2 select-none animate-[fadeIn_0.1s_ease-out]"
+                style={{ left: joystickOrigin.x, top: joystickOrigin.y }}
+              >
+                {/* Outer Base Ring */}
+                <div className="relative w-28 h-28 rounded-full bg-black/65 backdrop-blur-xl border-2 border-emerald-500/60 shadow-[0_0_25px_rgba(16,185,129,0.35)] flex items-center justify-center">
+                  {/* Directional crosshair lines */}
+                  <div className="absolute inset-x-2 top-1/2 -translate-y-1/2 h-px bg-white/25" />
+                  <div className="absolute inset-y-2 left-1/2 -translate-x-1/2 w-px bg-white/25" />
+                  
+                  {/* Directional Cardinal Labels */}
+                  <span className="absolute top-1 text-[8px] font-mono font-bold text-emerald-400">▲ TILT +</span>
+                  <span className="absolute bottom-1 text-[8px] font-mono font-bold text-emerald-400">▼ TILT -</span>
+                  <span className="absolute left-1.5 text-[8px] font-mono font-bold text-emerald-400">◄</span>
+                  <span className="absolute right-1.5 text-[8px] font-mono font-bold text-emerald-400">►</span>
+
+                  {/* Vector Trace line */}
+                  <svg className="absolute inset-0 w-full h-full pointer-events-none">
+                    <line
+                      x1="56"
+                      y1="56"
+                      x2={56 + joystickKnob.x}
+                      y2={56 + joystickKnob.y}
+                      stroke="rgba(52, 211, 153, 0.85)"
+                      strokeWidth="2.5"
+                      strokeDasharray="2 2"
+                    />
+                  </svg>
+
+                  {/* Thumbstick Knob */}
+                  <div
+                    className="absolute w-12 h-12 rounded-full bg-gradient-to-b from-zinc-100 to-zinc-400 dark:from-zinc-200 dark:to-zinc-500 border-2 border-white shadow-2xl flex items-center justify-center transition-transform duration-75"
+                    style={{
+                      transform: `translate(${joystickKnob.x}px, ${joystickKnob.y}px)`
+                    }}
+                  >
+                    <div className="w-5 h-5 rounded-full border border-zinc-400/80 bg-zinc-300/40 flex items-center justify-center">
+                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm animate-pulse" />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -590,10 +666,103 @@ export default function EyesModule({ token, permissions, requestPin: _requestPin
               </div>
             )}
 
-            {/* Bottom Left Drag Hint */}
-            <div className="absolute bottom-3 left-3 text-[10px] text-zinc-400 font-mono pointer-events-none bg-black/60 backdrop-blur-xl px-2.5 py-1 rounded-full border border-white/10 z-10 shadow-md flex items-center gap-1.5">
-              <Move size={11} className="text-zinc-300" />
-              <span>{language === 'en' ? 'Click & drag video to move camera' : 'Clic y arrastra en video para mover'}</span>
+            {/* Bottom Left Joystick Hint */}
+            <div className="absolute bottom-3 left-3 text-[10px] text-zinc-300 font-mono pointer-events-none bg-black/65 backdrop-blur-xl px-3 py-1 rounded-full border border-white/10 z-10 shadow-md flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span>{language === 'en' ? 'Joystick: Click & hold video to pan/tilt' : 'Joystick: Clic sostenido para panear'}</span>
+            </div>
+
+            {/* Gamepad D-Pad Cruceta & Zoom Controls Overlay (Inside Video & Fullscreen) */}
+            <div className="absolute bottom-3 right-3 z-20 ptz-overlay-control flex flex-col items-center gap-1.5 bg-black/70 backdrop-blur-xl p-2.5 rounded-3xl border border-white/15 shadow-2xl select-none">
+              
+              {/* Zoom Controls (Bumper style) */}
+              <div className="flex items-center gap-1.5 w-full justify-between pb-1 border-b border-white/10 text-white">
+                <button
+                  onClick={() => handleSendPtz('zoom_out', 0, 0, -1.0)}
+                  title="Zoom Out (-)"
+                  className="flex-1 py-1 px-2 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-[10px] font-bold font-mono flex items-center justify-center gap-1 transition-all"
+                >
+                  <ZoomOut size={12} />
+                  <span>ZOOM -</span>
+                </button>
+                <button
+                  onClick={() => handleSendPtz('zoom_in', 0, 0, 1.0)}
+                  title="Zoom In (+)"
+                  className="flex-1 py-1 px-2 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-[10px] font-bold font-mono flex items-center justify-center gap-1 transition-all"
+                >
+                  <ZoomIn size={12} />
+                  <span>ZOOM +</span>
+                </button>
+              </div>
+
+              {/* Real Gamepad Cruceta (Plus Shape) */}
+              <div className="relative w-28 h-28 flex items-center justify-center">
+                
+                {/* Up Wing */}
+                <button
+                  onClick={() => handleSendPtz('up', 0, 10)}
+                  title="Arriba / Tilt Up"
+                  className={`absolute top-0 w-9 h-10 rounded-t-xl flex items-center justify-center transition-all active:scale-95 border border-white/15 shadow-md ${
+                    ptzAction === 'up'
+                      ? 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.5)]'
+                      : 'bg-zinc-800/90 hover:bg-zinc-700 text-zinc-200'
+                  }`}
+                >
+                  <ArrowUp size={16} />
+                </button>
+
+                {/* Left Wing */}
+                <button
+                  onClick={() => handleSendPtz('left', -10, 0)}
+                  title="Izquierda / Pan Left"
+                  className={`absolute left-0 w-10 h-9 rounded-l-xl flex items-center justify-center transition-all active:scale-95 border border-white/15 shadow-md ${
+                    ptzAction === 'left'
+                      ? 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.5)]'
+                      : 'bg-zinc-800/90 hover:bg-zinc-700 text-zinc-200'
+                  }`}
+                >
+                  <ArrowLeft size={16} />
+                </button>
+
+                {/* Center Button (Reset / Center) */}
+                <button
+                  onClick={() => handleSendPtz('center')}
+                  title="Recentrar Posición"
+                  className={`w-9 h-9 z-10 rounded-lg flex items-center justify-center transition-all active:scale-90 border border-white/20 shadow-inner ${
+                    ptzAction === 'center'
+                      ? 'bg-emerald-500 text-white'
+                      : 'bg-zinc-950/90 text-zinc-400 hover:text-white hover:bg-zinc-900'
+                  }`}
+                >
+                  <Focus size={14} />
+                </button>
+
+                {/* Right Wing */}
+                <button
+                  onClick={() => handleSendPtz('right', 10, 0)}
+                  title="Derecha / Pan Right"
+                  className={`absolute right-0 w-10 h-9 rounded-r-xl flex items-center justify-center transition-all active:scale-95 border border-white/15 shadow-md ${
+                    ptzAction === 'right'
+                      ? 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.5)]'
+                      : 'bg-zinc-800/90 hover:bg-zinc-700 text-zinc-200'
+                  }`}
+                >
+                  <ArrowRight size={16} />
+                </button>
+
+                {/* Down Wing */}
+                <button
+                  onClick={() => handleSendPtz('down', 0, -10)}
+                  title="Abajo / Tilt Down"
+                  className={`absolute bottom-0 w-9 h-10 rounded-b-xl flex items-center justify-center transition-all active:scale-95 border border-white/15 shadow-md ${
+                    ptzAction === 'down'
+                      ? 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.5)]'
+                      : 'bg-zinc-800/90 hover:bg-zinc-700 text-zinc-200'
+                  }`}
+                >
+                  <ArrowDown size={16} />
+                </button>
+              </div>
             </div>
             {!streamError ? (
               <img
@@ -638,8 +807,24 @@ export default function EyesModule({ token, permissions, requestPin: _requestPin
             </div>
 
             {/* Floating Top-Right Controls HUD (Pill Dock) */}
-            <div className="absolute top-3 right-3 flex gap-1 items-center bg-black/65 backdrop-blur-xl p-1.5 rounded-full border border-white/10 z-10 shadow-lg text-white">
+            <div className="absolute top-3 right-3 flex gap-1.5 items-center bg-black/65 backdrop-blur-xl p-1.5 rounded-full border border-white/10 z-20 shadow-lg text-white ptz-overlay-control">
               
+              {/* Human Auto-Tracking Button (Inside Viewport / Fullscreen) */}
+              <button
+                onClick={handleToggleTracking}
+                title={trackingEnabled ? (language === 'en' ? 'Disable Human Auto-Tracking' : 'Desactivar Seguimiento de Humanos') : (language === 'en' ? 'Enable Human Auto-Tracking' : 'Activar Seguimiento de Humanos')}
+                className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 ${
+                  trackingEnabled 
+                    ? 'bg-emerald-500 text-white shadow-[0_0_12px_rgba(16,185,129,0.4)] animate-pulse' 
+                    : 'bg-white/15 hover:bg-white/25 text-zinc-300'
+                }`}
+              >
+                <Target size={11} className={trackingEnabled ? 'animate-pulse' : ''} />
+                <span>{trackingEnabled ? (language === 'en' ? 'TRACKING: ON' : 'SEGUIMIENTO: ON') : (language === 'en' ? 'TRACKING: OFF' : 'SEGUIMIENTO: OFF')}</span>
+              </button>
+
+              <div className="w-px h-4 bg-white/20 mx-0.5" />
+
               {/* Interactive Live REC Button */}
               <button
                 onClick={isRecording ? stopRecording : startRecording}
@@ -699,114 +884,10 @@ export default function EyesModule({ token, permissions, requestPin: _requestPin
               </button>
             </div>
 
-            {/* Bottom Floating Pill HUD */}
-            <div className="absolute bottom-3 right-3 text-[10px] text-zinc-300 font-mono pointer-events-none bg-black/60 backdrop-blur-xl px-3 py-1 rounded-full border border-white/10 z-10 shadow-md">
-              FEED: {selectedEye.node_id} | {selectedEye.link_status || 'Wi-Fi 5GHz'}
-            </div>
+
           </div>
 
-          {/* Manual PTZ & D-Pad Controls Toolbar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/60 dark:border-zinc-700/60">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center text-zinc-700 dark:text-zinc-300">
-                <Navigation size={14} />
-              </div>
-              <div>
-                <h4 className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                  <span>{language === 'en' ? 'Manual PTZ Controls' : 'Control Manual PTZ'}</span>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300">
-                    {selectedEye.node_id}
-                  </span>
-                </h4>
-                <p className="text-[11px] text-zinc-400">
-                  {language === 'en' ? 'Control pan, tilt and optical zoom' : 'Orientación física de lente y zoom'}
-                </p>
-              </div>
-            </div>
 
-            {/* Directional D-Pad + Zoom Buttons */}
-            <div className="flex items-center gap-3">
-              
-              {/* Zoom In / Zoom Out */}
-              <div className="flex items-center gap-1 bg-white dark:bg-zinc-900 p-1 rounded-full border border-zinc-200 dark:border-zinc-700 shadow-sm">
-                <button
-                  onClick={() => handleSendPtz('zoom_in', 0, 0, 1.0)}
-                  disabled={!selectedEye.is_online}
-                  title="Zoom In (+)"
-                  className="w-7 h-7 rounded-full flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all active:scale-95 disabled:opacity-40"
-                >
-                  <ZoomIn size={14} />
-                </button>
-                <button
-                  onClick={() => handleSendPtz('zoom_out', 0, 0, -1.0)}
-                  disabled={!selectedEye.is_online}
-                  title="Zoom Out (-)"
-                  className="w-7 h-7 rounded-full flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all active:scale-95 disabled:opacity-40"
-                >
-                  <ZoomOut size={14} />
-                </button>
-              </div>
-
-              {/* D-Pad Buttons */}
-              <div className="flex items-center gap-1 bg-white dark:bg-zinc-900 p-1 rounded-full border border-zinc-200 dark:border-zinc-700 shadow-sm">
-                <button
-                  onClick={() => handleSendPtz('left', -10, 0)}
-                  disabled={!selectedEye.is_online}
-                  title={language === 'en' ? 'Pan Left' : 'Girar Izquierda'}
-                  className={`w-7 h-7 rounded-full flex items-center justify-center transition-all active:scale-95 disabled:opacity-40 ${
-                    ptzAction === 'left' ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-950' : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                  }`}
-                >
-                  <ArrowLeft size={14} />
-                </button>
-
-                <button
-                  onClick={() => handleSendPtz('up', 0, 10)}
-                  disabled={!selectedEye.is_online}
-                  title={language === 'en' ? 'Tilt Up' : 'Inclinar Arriba'}
-                  className={`w-7 h-7 rounded-full flex items-center justify-center transition-all active:scale-95 disabled:opacity-40 ${
-                    ptzAction === 'up' ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-950' : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                  }`}
-                >
-                  <ArrowUp size={14} />
-                </button>
-
-                <button
-                  onClick={() => handleSendPtz('center')}
-                  disabled={!selectedEye.is_online}
-                  title={language === 'en' ? 'Reset / Center' : 'Recentrar Posición'}
-                  className={`w-7 h-7 rounded-full flex items-center justify-center transition-all active:scale-95 disabled:opacity-40 ${
-                    ptzAction === 'center' ? 'bg-emerald-500 text-white' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                  }`}
-                >
-                  <Focus size={13} />
-                </button>
-
-                <button
-                  onClick={() => handleSendPtz('down', 0, -10)}
-                  disabled={!selectedEye.is_online}
-                  title={language === 'en' ? 'Tilt Down' : 'Inclinar Abajo'}
-                  className={`w-7 h-7 rounded-full flex items-center justify-center transition-all active:scale-95 disabled:opacity-40 ${
-                    ptzAction === 'down' ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-950' : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                  }`}
-                >
-                  <ArrowDown size={14} />
-                </button>
-
-                <button
-                  onClick={() => handleSendPtz('right', 10, 0)}
-                  disabled={!selectedEye.is_online}
-                  title={language === 'en' ? 'Pan Right' : 'Girar Derecha'}
-                  className={`w-7 h-7 rounded-full flex items-center justify-center transition-all active:scale-95 disabled:opacity-40 ${
-                    ptzAction === 'right' ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-950' : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                  }`}
-                >
-                  <ArrowRight size={14} />
-                </button>
-              </div>
-
-            </div>
-          </div>
 
         </div>
 
