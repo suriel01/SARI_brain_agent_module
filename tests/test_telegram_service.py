@@ -106,13 +106,15 @@ def test_mqtt_handlers_telegram_integration():
         assert "Jetson-INTEGRATION-TEST" in kwargs.get("caption", "")
         assert kwargs.get("reply_markup") is not None
 
-    # Test 2: handle_status_message with LWT offline triggers watchdog alert
-    with patch("app.telegram.watchdog.send_telegram_alert_photo") as mock_watchdog_photo:
+    # Test 2: handle_status_message with LWT offline triggers watchdog alert (text only with action buttons)
+    with patch("app.telegram.service.send_telegram_message") as mock_watchdog_msg:
         handle_status_message("sari/nodes/Jetson-LWT-TEST/status", json.dumps({"status": "offline"}))
-        assert mock_watchdog_photo.called
-        args, kwargs = mock_watchdog_photo.call_args
-        assert "Jetson-LWT-TEST" in kwargs.get("caption", "")
-        assert "SABOTAJE" in kwargs.get("caption", "")
+        assert mock_watchdog_msg.called
+        args, kwargs = mock_watchdog_msg.call_args
+        msg_text = args[0] if args else kwargs.get("text", "")
+        assert "Jetson-LWT-TEST" in msg_text
+        assert "SABOTAJE" in msg_text
+        assert kwargs.get("reply_markup") is not None
 
 
 def test_telegram_photo_commands():

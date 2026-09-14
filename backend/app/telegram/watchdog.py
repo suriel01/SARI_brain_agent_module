@@ -4,7 +4,7 @@ import logging
 import threading
 from typing import Dict, Any, Set, Optional
 
-from .service import send_telegram_alert_photo, send_telegram_message, get_default_chat_id
+from . import service as telegram_service
 from ..routers.hardware import HardwareState
 from ..database import SessionLocal
 from ..models import models
@@ -65,28 +65,8 @@ def trigger_node_disconnection_alert(node_id: str, reason: str = "Desconexión a
         ]
     }
 
-    # Fetch last known evidence snapshot from DB for this camera or overall
-    snapshot = None
-    db = SessionLocal()
-    try:
-        last_evidence = db.query(models.ChatMessage).filter(
-            models.ChatMessage.snapshot.isnot(None)
-        ).order_by(models.ChatMessage.id.desc()).first()
-        if last_evidence and last_evidence.snapshot:
-            snapshot = last_evidence.snapshot
-    except Exception as e:
-        logger.warning(f"[WATCHDOG] Error querying last evidence: {e}")
-    finally:
-        db.close()
-
-    if snapshot:
-        return send_telegram_alert_photo(
-            photo_base64_or_bytes=snapshot,
-            caption=alert_text,
-            reply_markup=reply_markup
-        )
-    else:
-        return send_telegram_message(alert_text, reply_markup=reply_markup)
+    # Send alert as pure text with tactical inline action buttons (no photo/capture)
+    return telegram_service.send_telegram_message(alert_text, reply_markup=reply_markup)
 
 def _watchdog_worker():
     global _watchdog_active

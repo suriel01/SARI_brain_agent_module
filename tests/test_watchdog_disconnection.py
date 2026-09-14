@@ -30,7 +30,8 @@ def test_watchdog_disconnection_alert_and_debouncing():
         # 1. First disconnection: should trigger alert
         alert_sent = trigger_node_disconnection_alert("Jetson-PTZ_WATCHDOG", reason="corte_lwt")
         assert alert_sent is True, "First disconnection must trigger an alert"
-        assert mock_photo.called or mock_msg.called
+        assert mock_msg.called, "Disconnection alert must send text message"
+        assert not mock_photo.called, "Disconnection alert must NOT send photo/capture"
 
         # 2. Second immediate call (debouncing): should NOT trigger duplicate alert
         mock_photo.reset_mock()
