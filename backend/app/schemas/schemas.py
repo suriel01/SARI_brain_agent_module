@@ -102,6 +102,7 @@ class EyeNodeResponse(EyeNodeBase):
     gpu_load_pct: Optional[float] = None
     temp_c: Optional[float] = None
     link_status: Optional[str] = None
+    tracking_enabled: Optional[bool] = True
     class Config:
         from_attributes = True
 

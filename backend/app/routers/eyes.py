@@ -40,7 +40,8 @@ def list_eyes(db: Session = Depends(get_db), current_user: dict = Depends(get_cu
             cpu_load_pct=live_telemetry.get("cpu_load_pct"),
             gpu_load_pct=live_telemetry.get("gpu_load_pct"),
             temp_c=live_telemetry.get("temp_c"),
-            link_status=live_telemetry.get("link_status", "Wi-Fi" if is_online else "Desconectado")
+            link_status=live_telemetry.get("link_status", "Wi-Fi" if is_online else "Desconectado"),
+            tracking_enabled=live_telemetry.get("tracking_enabled", True)
         ))
     return results
 
@@ -202,3 +203,58 @@ def list_recordings(db: Session = Depends(get_db), current_user: dict = Depends(
             "thread_id": msg.thread_id
         })
     return recordings
+
+from pydantic import BaseModel, Field
+
+class TrackingPayload(BaseModel):
+    enabled: bool
+
+class PTZPayload(BaseModel):
+    action: str = Field(..., description="Direction: up, down, left, right, center, zoom_in, zoom_out, drag")
+    pan_delta: Optional[float] = 0.0
+    tilt_delta: Optional[float] = 0.0
+    zoom_delta: Optional[float] = 0.0
+
+@router.post("/{node_id}/tracking")
+def set_eye_tracking(node_id: str, payload: TrackingPayload, current_user: dict = Depends(get_current_user)):
+    if node_id in HardwareState.nodes:
+        HardwareState.nodes[node_id]["tracking_enabled"] = payload.enabled
+    
+    HardwareState.add_log(
+        f"🎯 Seguimiento automático de humanos {'ACTIVADO' if payload.enabled else 'DESACTIVADO'} para [{node_id}]",
+        level="INFO",
+        camera_module=node_id
+    )
+
+    try:
+        from ..mqtt.client import get_mqtt_client
+        import json
+        c = get_mqtt_client()
+        if c:
+            msg = json.dumps({"node_id": node_id, "enabled": payload.enabled, "timestamp": time.time()})
+            c.publish(f"sari/nodes/{node_id}/tracking", msg, qos=1, retain=True)
+    except Exception as ex:
+        print(f"[MQTT] Error publishing tracking state: {ex}")
+
+    return {"status": "success", "node_id": node_id, "tracking_enabled": payload.enabled}
+
+@router.post("/{node_id}/ptz")
+def send_ptz_command(node_id: str, payload: PTZPayload, current_user: dict = Depends(get_current_user)):
+    try:
+        from ..mqtt.client import get_mqtt_client
+        import json
+        c = get_mqtt_client()
+        if c:
+            msg = json.dumps({
+                "node_id": node_id,
+                "action": payload.action,
+                "pan_delta": payload.pan_delta,
+                "tilt_delta": payload.tilt_delta,
+                "zoom_delta": payload.zoom_delta,
+                "timestamp": time.time()
+            })
+            c.publish(f"sari/nodes/{node_id}/ptz", msg, qos=0)
+    except Exception as ex:
+        print(f"[MQTT] Error publishing PTZ command: {ex}")
+
+    return {"status": "success", "node_id": node_id, "action": payload.action}

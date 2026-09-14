@@ -3,7 +3,8 @@ import {
   Video, Eye, Plus, RotateCw, FlipHorizontal, FlipVertical, 
   Maximize2, Minimize2, RefreshCcw, Settings2, Cpu, 
   Activity, Thermometer, HardDrive, ShieldAlert, Download, 
-  Play, Circle, Trash2, Camera, Lock, CheckCircle2, AlertCircle, X
+  Play, Circle, Trash2, Camera, Lock, CheckCircle2, AlertCircle, X,
+  ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Focus, ZoomIn, ZoomOut, Target, Move, Navigation
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext';
 import ConnectEyeModal from './ConnectEyeModal';
@@ -26,6 +27,7 @@ interface EyeNode {
   gpu_load_pct?: number;
   temp_c?: number;
   link_status?: string;
+  tracking_enabled?: boolean;
 }
 
 interface RecordingItem {
@@ -48,6 +50,13 @@ export default function EyesModule({ token, permissions, requestPin: _requestPin
 
   const [eyes, setEyes] = useState<EyeNode[]>([]);
   const [selectedEyeId, setSelectedEyeId] = useState<string>(initialSelectedNodeId || 'Jetson-PTZ_1');
+
+  useEffect(() => {
+    const active = eyes.find(e => e.node_id === selectedEyeId);
+    if (active && active.tracking_enabled !== undefined) {
+      setTrackingEnabled(active.tracking_enabled);
+    }
+  }, [selectedEyeId, eyes]);
 
   useEffect(() => {
     if (initialSelectedNodeId) {
@@ -89,6 +98,15 @@ export default function EyesModule({ token, permissions, requestPin: _requestPin
 
   // Snapshot Preview Modal
   const [previewSnapshot, setPreviewSnapshot] = useState<string | null>(null);
+
+  // Human Auto-Tracking & Manual PTZ State
+  const [trackingEnabled, setTrackingEnabled] = useState<boolean>(true);
+  const [ptzAction, setPtzAction] = useState<string | null>(null);
+  const [ptzFeedback, setPtzFeedback] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
+  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const dragThrottleTimer = useRef<any>(null);
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const streamImgRef = useRef<HTMLImageElement>(null);
@@ -338,6 +356,73 @@ export default function EyesModule({ token, permissions, requestPin: _requestPin
     }
   };
 
+  const handleToggleTracking = async () => {
+    const nextState = !trackingEnabled;
+    setTrackingEnabled(nextState);
+    try {
+      await apiFetch(`/eyes/${selectedEye.node_id}/tracking`, token, {
+        method: 'POST',
+        body: JSON.stringify({ enabled: nextState })
+      });
+    } catch (err) {
+      console.error('Error toggling tracking:', err);
+    }
+  };
+
+  const handleSendPtz = async (action: string, panDelta = 0, tiltDelta = 0, zoomDelta = 0) => {
+    setPtzAction(action);
+    const label = action === 'drag' 
+      ? `PAN: ${panDelta > 0 ? '+' : ''}${Math.round(panDelta)} | TILT: ${tiltDelta > 0 ? '+' : ''}${Math.round(tiltDelta)}` 
+      : action.toUpperCase();
+    setPtzFeedback(`PTZ: ${label}`);
+    
+    setTimeout(() => setPtzAction(null), 300);
+    setTimeout(() => setPtzFeedback(null), 1200);
+
+    try {
+      await apiFetch(`/eyes/${selectedEye.node_id}/ptz`, token, {
+        method: 'POST',
+        body: JSON.stringify({
+          action,
+          pan_delta: panDelta,
+          tilt_delta: tiltDelta,
+          zoom_delta: zoomDelta
+        })
+      });
+    } catch (err) {
+      console.error('Error sending PTZ command:', err);
+    }
+  };
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest('button, input')) return;
+    setIsDragging(true);
+    setDragStart({ x: e.clientX, y: e.clientY });
+    setDragOffset({ x: 0, y: 0 });
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isDragging || !dragStart) return;
+    const dx = e.clientX - dragStart.x;
+    const dy = e.clientY - dragStart.y;
+    setDragOffset({ x: dx, y: dy });
+
+    if (!dragThrottleTimer.current && (Math.abs(dx) > 15 || Math.abs(dy) > 15)) {
+      dragThrottleTimer.current = setTimeout(() => {
+        dragThrottleTimer.current = null;
+      }, 160);
+      handleSendPtz('drag', dx / 6, -dy / 6);
+    }
+  };
+
+  const handleMouseUp = () => {
+    if (isDragging) {
+      setIsDragging(false);
+      setDragStart(null);
+      setDragOffset({ x: 0, y: 0 });
+    }
+  };
+
   const formatSeconds = (sec: number) => {
     const m = Math.floor(sec / 60).toString().padStart(2, '0');
     const s = (sec % 60).toString().padStart(2, '0');
@@ -420,6 +505,19 @@ export default function EyesModule({ token, permissions, requestPin: _requestPin
 
             <div className="flex items-center gap-2">
               <button
+                onClick={handleToggleTracking}
+                title={trackingEnabled ? (language === 'en' ? 'Disable Human Auto-Tracking' : 'Desactivar Seguimiento de Humanos') : (language === 'en' ? 'Enable Human Auto-Tracking' : 'Activar Seguimiento de Humanos')}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 border ${
+                  trackingEnabled
+                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/25'
+                    : 'bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:bg-zinc-200'
+                }`}
+              >
+                <Target size={13} className={trackingEnabled ? 'animate-pulse text-emerald-500' : 'text-zinc-400'} />
+                <span>{language === 'en' ? (trackingEnabled ? 'Tracking: ON' : 'Tracking: OFF') : (trackingEnabled ? 'Seguimiento: ACTIVO' : 'Seguimiento: PAUSADO')}</span>
+              </button>
+
+              <button
                 onClick={handleTakeManualSnapshot}
                 disabled={isCapturingSnapshot}
                 title={language === 'en' ? 'Capture snapshot from camera' : 'Tomar captura de la cámara'}
@@ -459,15 +557,44 @@ export default function EyesModule({ token, permissions, requestPin: _requestPin
             </div>
           )}
 
-          {/* Viewport Container */}
+          {/* Viewport Container with Click & Drag PTZ Support */}
           <div
             ref={viewportRef}
-            className={`relative w-full bg-zinc-950 flex items-center justify-center transition-all overflow-hidden ${
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+            className={`relative w-full bg-zinc-950 flex items-center justify-center transition-all overflow-hidden cursor-grab active:cursor-grabbing select-none ${
               isFullscreen 
                 ? 'fixed inset-0 z-50 h-screen w-screen rounded-none' 
                 : 'aspect-video rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-inner'
             }`}
           >
+            {/* Visual Feedback on Dragging */}
+            {isDragging && (
+              <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-20">
+                <div className="bg-black/80 backdrop-blur-md px-4 py-2 rounded-2xl border border-emerald-500/50 shadow-2xl flex items-center gap-2.5 text-white animate-[fadeIn_0.15s_ease-out]">
+                  <Move size={16} className="text-emerald-400 animate-pulse" />
+                  <div className="text-xs font-mono">
+                    <span className="text-emerald-400 font-bold">ORIENTACIÓN PTZ:</span> Pan {dragOffset.x > 0 ? `+${Math.round(dragOffset.x)}px` : `${Math.round(dragOffset.x)}px`} | Tilt {dragOffset.y < 0 ? `+${Math.round(-dragOffset.y)}px` : `${Math.round(-dragOffset.y)}px`}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* On-Screen PTZ Feedback Badge */}
+            {ptzFeedback && (
+              <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20 pointer-events-none bg-zinc-900/90 text-white border border-zinc-700 px-3 py-1 rounded-full text-[11px] font-mono shadow-xl flex items-center gap-1.5 animate-[fadeIn_0.2s_ease-out]">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                <span>{ptzFeedback}</span>
+              </div>
+            )}
+
+            {/* Bottom Left Drag Hint */}
+            <div className="absolute bottom-3 left-3 text-[10px] text-zinc-400 font-mono pointer-events-none bg-black/60 backdrop-blur-xl px-2.5 py-1 rounded-full border border-white/10 z-10 shadow-md flex items-center gap-1.5">
+              <Move size={11} className="text-zinc-300" />
+              <span>{language === 'en' ? 'Click & drag video to move camera' : 'Clic y arrastra en video para mover'}</span>
+            </div>
             {!streamError ? (
               <img
                 ref={streamImgRef}
@@ -575,6 +702,109 @@ export default function EyesModule({ token, permissions, requestPin: _requestPin
             {/* Bottom Floating Pill HUD */}
             <div className="absolute bottom-3 right-3 text-[10px] text-zinc-300 font-mono pointer-events-none bg-black/60 backdrop-blur-xl px-3 py-1 rounded-full border border-white/10 z-10 shadow-md">
               FEED: {selectedEye.node_id} | {selectedEye.link_status || 'Wi-Fi 5GHz'}
+            </div>
+          </div>
+
+          {/* Manual PTZ & D-Pad Controls Toolbar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/60 dark:border-zinc-700/60">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center text-zinc-700 dark:text-zinc-300">
+                <Navigation size={14} />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                  <span>{language === 'en' ? 'Manual PTZ Controls' : 'Control Manual PTZ'}</span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300">
+                    {selectedEye.node_id}
+                  </span>
+                </h4>
+                <p className="text-[11px] text-zinc-400">
+                  {language === 'en' ? 'Control pan, tilt and optical zoom' : 'Orientación física de lente y zoom'}
+                </p>
+              </div>
+            </div>
+
+            {/* Directional D-Pad + Zoom Buttons */}
+            <div className="flex items-center gap-3">
+              
+              {/* Zoom In / Zoom Out */}
+              <div className="flex items-center gap-1 bg-white dark:bg-zinc-900 p-1 rounded-full border border-zinc-200 dark:border-zinc-700 shadow-sm">
+                <button
+                  onClick={() => handleSendPtz('zoom_in', 0, 0, 1.0)}
+                  disabled={!selectedEye.is_online}
+                  title="Zoom In (+)"
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all active:scale-95 disabled:opacity-40"
+                >
+                  <ZoomIn size={14} />
+                </button>
+                <button
+                  onClick={() => handleSendPtz('zoom_out', 0, 0, -1.0)}
+                  disabled={!selectedEye.is_online}
+                  title="Zoom Out (-)"
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all active:scale-95 disabled:opacity-40"
+                >
+                  <ZoomOut size={14} />
+                </button>
+              </div>
+
+              {/* D-Pad Buttons */}
+              <div className="flex items-center gap-1 bg-white dark:bg-zinc-900 p-1 rounded-full border border-zinc-200 dark:border-zinc-700 shadow-sm">
+                <button
+                  onClick={() => handleSendPtz('left', -10, 0)}
+                  disabled={!selectedEye.is_online}
+                  title={language === 'en' ? 'Pan Left' : 'Girar Izquierda'}
+                  className={`w-7 h-7 rounded-full flex items-center justify-center transition-all active:scale-95 disabled:opacity-40 ${
+                    ptzAction === 'left' ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-950' : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  <ArrowLeft size={14} />
+                </button>
+
+                <button
+                  onClick={() => handleSendPtz('up', 0, 10)}
+                  disabled={!selectedEye.is_online}
+                  title={language === 'en' ? 'Tilt Up' : 'Inclinar Arriba'}
+                  className={`w-7 h-7 rounded-full flex items-center justify-center transition-all active:scale-95 disabled:opacity-40 ${
+                    ptzAction === 'up' ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-950' : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  <ArrowUp size={14} />
+                </button>
+
+                <button
+                  onClick={() => handleSendPtz('center')}
+                  disabled={!selectedEye.is_online}
+                  title={language === 'en' ? 'Reset / Center' : 'Recentrar Posición'}
+                  className={`w-7 h-7 rounded-full flex items-center justify-center transition-all active:scale-95 disabled:opacity-40 ${
+                    ptzAction === 'center' ? 'bg-emerald-500 text-white' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  <Focus size={13} />
+                </button>
+
+                <button
+                  onClick={() => handleSendPtz('down', 0, -10)}
+                  disabled={!selectedEye.is_online}
+                  title={language === 'en' ? 'Tilt Down' : 'Inclinar Abajo'}
+                  className={`w-7 h-7 rounded-full flex items-center justify-center transition-all active:scale-95 disabled:opacity-40 ${
+                    ptzAction === 'down' ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-950' : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  <ArrowDown size={14} />
+                </button>
+
+                <button
+                  onClick={() => handleSendPtz('right', 10, 0)}
+                  disabled={!selectedEye.is_online}
+                  title={language === 'en' ? 'Pan Right' : 'Girar Derecha'}
+                  className={`w-7 h-7 rounded-full flex items-center justify-center transition-all active:scale-95 disabled:opacity-40 ${
+                    ptzAction === 'right' ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-950' : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  <ArrowRight size={14} />
+                </button>
+              </div>
+
             </div>
           </div>
 
