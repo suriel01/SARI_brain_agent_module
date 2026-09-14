@@ -1,137 +1,198 @@
 # 🛡️ SARI Brain Agent — Sistema Autónomo de Respuesta a Intrusiones
 
-**SARI (Sistema Autónomo de Respuesta a Intrusiones)** es una plataforma de seguridad perimetral autónoma de nivel empresarial que combina Inteligencia Artificial local, visión por computadora en tiempo real (**NVIDIA Jetson Orin Nano con YOLO26n**), control de hardware físico, guardrails de seguridad de IA (**NeMo Guardrails**) y una consola gráfica táctica para Centro de Operaciones de Seguridad (SOC).
+**SARI (Sistema Autónomo de Respuesta a Intrusiones)** es una plataforma de defensa y seguridad perimetral táctica de nivel empresarial. Integra Inteligencia Artificial local, visión por computadora en tiempo real (**NVIDIA Jetson Orin Nano con YOLO26n**), telemetría inalámbrica MQTT, control de hardware táctico, guardrails de seguridad de IA (**NeMo Guardrails**), un bot táctico interactivo en **Telegram** y una consola gráfica de operaciones (**SOC Dashboard**).
 
 ---
 
-## 🚀 Características Principales
+## 🏛️ Arquitectura Global del Sistema
 
-### 🎨 1. Consola Táctica SOC Tono Oscuro Monocromático
-- **Estética SOC Profesional**: Diseño táctico en escalas de grises oscuros puros (`#090a0f`, `#13151c`), reduciendo la fatiga visual y reservando el color **Azul de Acción (`#0284c7`)** únicamente para botones ejecutables (`+ New Chat`, `Logout`, `Send`, `Autorizar PIN`).
-- **Fondo Animado de Circuitos (`CircuitCanvas`)**: Lienzo HTML5 Canvas con cuadrícula minimalista y partículas viajando suavemente en tiempo real a lo largo de las trazadas, visible a través de los paneles traslúcidos con efecto *glassmorphism* (`backdrop-filter: blur(12px)`).
-- **Paneles Plegables y Redimensionables**:
-  - Barra lateral de Módulos (Chat, Live Perception, Hardware Control, User Management) redimensionable por arrastre y plegable hasta ocultarse por completo.
-  - Barra lateral de Hilos de Chat independiente con límites de expansión/contracción y botones tácticos de despliegue en un solo clic.
-
----
-
-### 🛡️ 2. Seguridad del Agente con NeMo Guardrails
-- **Protección Táctica Activa**: Implementación de guardrails mediante **NeMo Guardrails (`actions.co`)** para la interceptación y validación de prompts, bloqueando intentos de inyección de comandos o fugas de información interna.
-- **Ocultamiento de Stack Técnico por Seguridad**: El agente y la interfaz reportan el estado con la insignia **`LLM Online`**, garantizando la privacidad de los modelos e infraestructura subyacente.
-- **Guardrail para Reportes de Estatus Tácticos**: Al solicitar *"dame un reporte de estatus"*, el sistema desglosa un informe ejecutivo completo en formato Markdown que incluye:
-  - Estado de componentes principales (Backend, PostgreSQL/pgvector, Sirena, NeMo Guardrails).
-  - Sección dedicada a **Módulos de Visión Táctica Jetson Orin Nano / Nodos**, indicando su estado de conexión (`ONLINE`) y de grabación (`REC 1080p`).
-  - Historial reciente de intrusiones en memoria RAG.
-  - Evaluación de nivel de amenaza y permisos del usuario autenticado (RBAC).
-
----
-
-### 📸 3. Captura de Módulos y Evidencia por Chat
-- **Solicitud de Capturas en Tiempo Real**: El operador puede pedir capturas directamente al agente (*"muéstrame capturas del módulo X"*, *"envía una captura de la intrusión"*), desplegando imágenes de evidencia formateadas en el chat.
-- **Recepción de Alertas Automáticas Jetson**: Al detectar una intrusión, los nodos NVIDIA Jetson envían una notificación que genera un hilo de evidencia e imágenes asociadas.
-
----
-
-### 📋 4. Registro de Event Logs con Filtros y Caducidad (TTL)
-- **Fechado Preciso**: Cada mensaje enviado por el usuario o generado por el agente incluye la fecha y hora fija exacta (`YYYY-MM-DD HH:MM:SS`).
-- **Logs de Auditoría**: Toda acción (login, disparos de alarma, bloqueos, cambios de estado) se registra automáticamente en los Event Logs.
-- **Búsqueda y Filtros Granulares**:
-  - Filtro por Nivel de Severidad (`ALL`, `INFO`, `WARN`, `CRITICAL`).
-  - Filtro por Módulo Origen (`System`, `Vision Node`, `Hardware`, `Auth`).
-  - Búsqueda por texto en tiempo real y selector de Rango de Fechas.
-- **Tiempo de Vida / Caducidad (TTL)**: Mecanismo automatizado para la depuración de logs obsoletos.
-
----
-
-### 🚨 5. Barra de Emergencia de 2 Capas & Control de Hardware
-- **1-Click Emergency Toolbar**: Acceso rápido desde la cabecera superior a los controles críticos del perímetro:
-  - **Sirena Sonora Perimetral**: Disparo manual/automático de la alarma física y sintetizador de audio táctico en navegador. Indicador dinámico en Verde (Normal) / Rojo (Alerta Activa).
-  - **Bloqueo Perimetral de Accesos**: Cierre y enclavamiento de portones. Indicador en Ámbar cuando está activado.
-- **Protección con PIN de Seguridad (`1234`)**: Las acciones sensibles requieren autorización previa mediante un modal con clave de seguridad.
-- **Control PTZ y Telemetría**: Monitoreo de cámaras con controles de movimiento (Pan/Tilt/Zoom) e indicadores de estado de red.
+```
+  ┌─────────────────────────────────────────────────────────────┐
+  │                 PERÍMETRO / NODOS DE VISIÓN                │
+  │                                                             │
+  │   [NVIDIA Jetson Orin Nano] (Módulo Ojos)                  │
+  │     ├── YOLO26n: Inferencia local en vivo                   │
+  │     ├── jetson_telemetry.py: Telemetría CPU/GPU/RAM/Temp/FPS│
+  │     └── Publicador MQTT con Last Will and Testament (LWT)   │
+  └──────────────────────────────┬──────────────────────────────┘
+                                 │ Wi-Fi / Ethernet
+                                 ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │              INFRAESTRUCTURA SARI CEREBRO (HOST)            │
+  │                                                             │
+  │   [Broker MQTT Mosquitto] (Puerto 1883)                     │
+  │     └── sari/nodes/+/telemetry | sari/alerts | status (LWT) │
+  │                                                             │
+  │   [FastAPI Backend] (Puerto 7000)                           │
+  │     ├── Watchdog de Desconexión y Anti-Sabotaje             │
+  │     ├── NeMo Guardrails & Inferencia LLM Offline            │
+  │     ├── WebSocket & API REST para SOC Dashboard             │
+  │     └── Motor de Integración Bidireccional con Telegram     │
+  │                                                             │
+  │   [PostgreSQL 15 + pgvector] (Puerto 5433)                  │
+  │     └── Persistencia de chats, usuarios, eventos y nodos    │
+  │                                                             │
+  │   [Microservicio de Sirena Táctica] (Puerto 5000)           │
+  │     └── Control de bocina física y disparo de pulsos        │
+  └──────────────────────────────┬──────────────────────────────┘
+                                 │
+         ┌───────────────────────┴───────────────────────┐
+         ▼                                               ▼
+┌──────────────────────────────┐         ┌──────────────────────────────┐
+│     SOC DASHBOARD (VITE)     │         │     TELEGRAM BOT TÁCTICO     │
+│       Puerto 5173            │         │                              │
+│  • Chat Táctico con Agente   │         │  • Alertas Críticas Push     │
+│  • Ojos: Métricas & Config   │         │  • Botones de Acción Inline  │
+│  • Control: Radar Perimetral │         │  • Comandos remotos          │
+│  • Usuarios: Matriz RBAC     │         │  • Capturas (/fotos, /foto)  │
+└──────────────────────────────┘         └──────────────────────────────┘
+```
 
 ---
 
-### 👥 6. Matriz de Permisos Granulares (RBAC)
-- **Roles de Administrador y Operador**: Control estricto de acceso basado en el rol del usuario autenticado.
-- **Permisos Granulares**: Creación, renombrado y eliminación de hilos de chat, control de hardware y administración de cuentas de usuario.
+## 🚀 Características Principales del Ecosistema
+
+### 1. 🎛️ Consola Táctica SOC Dashboard (React + TypeScript)
+- **Modo Oscuro Monocromático & Alto Rendimiento**: Estética táctica militar inspirada en centros de mando de operaciones de seguridad.
+- **Módulos Principales (Bilingüe ES / EN)**:
+  - **Chat**: Comunicación segura con el agente SARI Cerebro, visor de evidencias fotográficas con relación de aspecto natural e historial persistente.
+  - **Ojos (Eyes)**: Supervisión y administración centralizada de todas las cámaras Jetson. Despliegue de métricas en vivo (RAM usada/total, CPU %, GPU %, Temperatura, FPS, tipo de enlace), galería de evidencias por nodo y modal de configuración protegida por PIN (renombrar cámara, ajustar umbral de confianza YOLO, modo de detección).
+  - **Control**: Escaneo radar perimetral interactivo. Muestra exclusivamente los nodos en línea con pulso táctico verde; al pulsar sobre un nodo en el radar, conmuta directamente a la sección de configuración de esa Jetson en el módulo Ojos.
+  - **Usuarios (Users)**: Matriz de Control de Acceso Basado en Roles (RBAC) con permisos granulares (crear hilos, eliminar hilos, control de hardware, administración de cuentas).
+- **Pantalla de Inicio de Sesión Táctica**: Presentación minimalista con logotipo SARI en alta resolución, interfaz oscura, pie de versión `SARI OS V0.5` y selector de idioma dinámico.
 
 ---
 
-## 🛠️ Requisitos Previos
-
-- [Docker](https://docs.docker.com/get-docker/)
-- [Docker Compose](https://docs.docker.com/compose/install/)
+### 2. 📡 Telemetría Inalámbrica y Red de Sensores (MQTT Broker)
+- **Broker Eclipse Mosquitto Contenedorizado**: Expuesto en el puerto `1883` con autenticación segura y soporte para transferencia de evidencia fotográfica (hasta 10 MB).
+- **Tópicos Estandarizados**:
+  - `sari/nodes/{node_id}/telemetry`: Reporte periódico de salud de hardware.
+  - `sari/nodes/{node_id}/status`: Estado de presencia en red.
+  - `sari/alerts`: Ingesta de detecciones de intrusos generadas por los modelos YOLO de las Jetsons.
+- **Last Will and Testament (LWT)**: Si una Jetson sufre un corte de cable, apagón o interferencia, el broker publica inmediatamente su desconexión física.
+- **Cliente Dual Resiliente (`jetson_telemetry.py`)**: Script optimizado para la Jetson con reconexión automática y conmutación transparente a fallback HTTP REST si la conexión MQTT se degrada.
 
 ---
 
-## ⚡ Inicio Rápido (Despliegue con Docker)
+### 3. 🤖 Bot Táctico y Alertas en Telegram
+- **Notificaciones Inmediatas de Intrusión**: Despacho de alertas con fotografía de evidencia, nivel de confianza del modelo de visión, marca temporal y botones interactivos:
+  - `🚨 Activar Sirena 30s`
+  - `🔒 Bloquear Accesos`
+  - `🔊 Silenciar Sirena`
+- **Watchdog Anti-Sabotaje de Conexión**: Monitoreo continuo de señales de vida (Heartbeat). Si un nodo en línea deja de transmitir por más de 15 segundos o envía LWT, despacha una alerta crítica de posible sabotaje a Telegram.
+- **Comandos Tácticos Bidireccionales**:
+  - `/sirena`: Dispara la alarma sonora física del recinto.
+  - `/silenciar`: Detiene inmediatamente la sirena.
+  - `/bloquear`: Enclava magnéticamente todos los accesos perimetrales.
+  - `/estado`: Retorna el estado consolidado de la infraestructura, base de datos y nodos activos.
+  - `/fotos`: Solicita y envía al chat capturas actualizadas de todos los módulos Ojos activos.
+  - `/foto <ID_MODULO>`: Solicita y envía la captura de una Jetson específica.
+- **Seguridad Táctica**: Whitelist estricta mediante `TELEGRAM_ALLOWED_CHAT_IDS` para ignorar mensajes de usuarios ajenos al equipo de seguridad.
 
-1. Clonar el repositorio:
-   ```bash
-   git clone git@github.com:suriel01/SARI_brain_agent_module.git
-   cd SARI_brain_agent_module
-   ```
+---
 
-2. Levantar la infraestructura completa con Docker Compose:
-   ```bash
-   docker compose up -d --build
-   ```
+### 4. 🛡️ Motor de IA y Seguridad con NeMo Guardrails
+- **Ejecución 100% Offline**: Políticas de seguridad estrictas sin salida a internet para evitar fugas de información táctica o planos perimetrales.
+- **Validación de Prompts e Inyecciones**: Bloqueo de ataques de ingeniería social o intentos de evasión de restricciones operativas.
+- **Herramientas Físicas Inmediatas**: Integración directa con herramientas tácticas (`activar_sirena`, `desactivar_sirena`, `cerrar_accesos`) invocadas automáticamente por el LLM ante solicitudes de emergencia.
 
-3. Abrir la consola táctica en el navegador:
-   👉 **[http://localhost:5173](http://localhost:5173)**
+---
 
-### 🔑 Credenciales Iniciales por Defecto
+## 🛠️ Requisitos del Sistema
 
-- **Usuario Administrador**: `admin`
+- **Host (Servidor Central)**:
+  - Linux (Ubuntu 22.04 LTS o superior recomendado).
+  - [Docker](https://docs.docker.com/get-docker/) y [Docker Compose](https://docs.docker.com/compose/install/).
+  - Puertos libres: `5173` (Frontend), `7000` (Backend API), `1883` (MQTT), `5000` (Sirena), `5433` (PostgreSQL).
+- **Nodos Periféricos (Módulos Ojos)**:
+  - NVIDIA Jetson Orin Nano / Nano / Xavier NX con JetPack.
+  - Python 3.8+ con `paho-mqtt`, `psutil` y `requests`.
+
+---
+
+## ⚡ Guía Rápida de Despliegue
+
+### 1. Clonar el repositorio y configurar variables de entorno
+```bash
+git clone git@github.com:suriel01/SARI_brain_agent_module.git
+cd SARI_brain_agent_module
+cp .env.example .env
+```
+
+Edita `.env` para ingresar tu token de Telegram y Chat ID:
+```env
+TELEGRAM_BOT_TOKEN=tu_token_de_bot
+TELEGRAM_ALLOWED_CHAT_IDS=tu_chat_id
+```
+
+### 2. Levantar la infraestructura completa con Docker Compose
+```bash
+docker compose up -d --build
+```
+
+### 3. Verificar estado de los contenedores
+```bash
+docker compose ps
+```
+Deberás ver activos: `sari-ui`, `sari-backend`, `sari-mqtt`, `sari-sirena` y `sari_postgres`.
+
+### 4. Acceder al SOC Dashboard
+Abre tu navegador en:
+👉 **[http://localhost:5173](http://localhost:5173)**
+
+- **Usuario**: `admin`
 - **Contraseña**: `sari_password`
-- **PIN de Seguridad para Hilos/Acciones**: `1234`
+- **PIN de Seguridad**: `1234`
 
 ---
 
-## 📡 Integración con Nodos Jetson Orin Nano (YOLO26n)
+## 🧪 Pruebas Automatizadas
 
-Los nodos de visión artificial envían alertas en tiempo real mediante peticiones HTTP POST al backend:
+El proyecto cuenta con una suite completa de pruebas unitarias y de integración que validan el flujo MQTT, fallback HTTP, comandos de Telegram, watchdog de desconexión y base de datos:
 
 ```bash
-curl -X POST http://localhost:7000/api/alerts/event \
-  -H "Content-Type: application/json" \
-  -d '{
-    "module_name": "Jetson-Orin-Nano-01",
-    "event": "Intrusión de vehículo no autorizado",
-    "confidence": 0.98,
-    "auto_siren": true
-  }'
+docker exec -e PYTHONPATH=/app -t sari-backend pytest tests/ -v
 ```
+
+Resultado esperado: **12 passed (100%)**.
 
 ---
 
-## 📂 Estructura del Proyecto
+## 📂 Estructura del Repositorio
 
 ```
-SARI_brain_agent/
+SARI_brain_agent_module/
 ├── backend/
-:   ├── app/
-│   │   ├── crud/           # Lógica de operaciones en PostgreSQL
-│   │   ├── guardrails/     # Definiciones NeMo Guardrails (actions.co, config.yml)
-│   │   ├── models/         # Modelos SQLAlchemy (User, ChatThread, ChatMessage, EventLog)
-│   │   ├── routers/        # Rutas de API (auth, chat, users, hardware, alerts)
-│   │   ├── schemas/        # Esquemas Pydantic
-│   │   └── main.py         # Punto de entrada FastAPI
-│   └── Dockerfile.backend
-├── sari-ui/                # Consola Frontend React + TypeScript
-│   ├── src/
-│   │   ├── components/     # Dashboard, ChatPanel, HardwarePanel, AdminPanel, CircuitCanvas, PinModal
-│   │   └── index.css       # Estilos del SOC Monocromático
-│   └── Dockerfile
-├── sirena_service.py       # Microservicio HTTP de sirena sonora física
-├── Dockerfile.sirena
-├── docker-compose.yml      # Orquestador Docker (PostgreSQL, Backend, UI, Sirena)
+│   └── app/
+│       ├── crud/              # Operaciones en base de datos PostgreSQL
+│       ├── guardrails/        # Rieles de seguridad NeMo Guardrails
+│       ├── models/            # Modelos SQLAlchemy (Users, Chats, EyeNodes, EventLogs)
+│       ├── mqtt/              # Cliente asíncrono y handlers de eventos MQTT
+│       ├── routers/           # Endpoints FastAPI (auth, chat, hardware, eyes, alerts)
+│       ├── telegram/          # Servicio bot, webhook, watchdog y comandos tácticos
+│       └── main.py            # Inicialización de servicios y ciclo de vida
+├── sari-ui/                   # Frontend SOC Dashboard en React + TypeScript
+│   └── src/
+│       ├── components/        # Login, Dashboard, ChatPanel, EyesPanel, ControlPanel, UsersPanel
+│       └── i18n/              # Soporte multilingüe (Español / English)
+├── mosquitto/                 # Configuración y credenciales del broker MQTT
+├── specs/                     # Especificaciones técnicas formales (001 a 005)
+│   ├── 001-protocolo-seguridad.md
+│   ├── 002-mqtt-wireless-telemetry.md
+│   ├── 003-eyes-surveillance-module.md
+│   ├── 004-telegram-tactical-integration.md
+│   └── 005-hardware-tamper-autoprotection.md
+├── doc/                       # Documentación de arquitectura, prompts y tareas
+├── tests/                     # Suite de pruebas automatizadas (pytest)
+├── sirena_service.py          # Microservicio emulador de sirena táctica física
+├── jetson_telemetry.py        # Daemon dual MQTT/HTTP para nodos NVIDIA Jetson
+├── sari-jetson.service        # Unidad systemd para despliegue en Jetsons
+├── docker-compose.yml         # Orquestador multi-contenedor
 └── README.md
 ```
 
 ---
 
-## 📜 Licencia
+## 📜 Licencia y Confidencialidad
 
-Desarrollado para la infraestructura de seguridad autónoma **SARI**. Todos los derechos reservados.
+Sistema de Respuesta Táctica Autónoma **SARI**. Desarrollado para operaciones de seguridad de alta criticidad. Todos los derechos reservados.
