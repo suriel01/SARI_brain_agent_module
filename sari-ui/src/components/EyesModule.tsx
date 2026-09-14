@@ -4,7 +4,7 @@ import {
   Maximize2, Minimize2, RefreshCcw, Settings2, Cpu, 
   Activity, Thermometer, HardDrive, ShieldAlert, Download, 
   Play, Circle, Trash2, Camera, Lock, CheckCircle2, AlertCircle, X,
-  ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Focus, ZoomIn, ZoomOut, Target
+  ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Focus, ZoomIn, Target
 } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext';
 import ConnectEyeModal from './ConnectEyeModal';
@@ -51,10 +51,14 @@ export default function EyesModule({ token, permissions, requestPin: _requestPin
   const [eyes, setEyes] = useState<EyeNode[]>([]);
   const [selectedEyeId, setSelectedEyeId] = useState<string>(initialSelectedNodeId || 'Jetson-PTZ_1');
 
+  const syncedEyeIdRef = useRef<string | null>(null);
   useEffect(() => {
-    const active = eyes.find(e => e.node_id === selectedEyeId);
-    if (active && active.tracking_enabled !== undefined) {
-      setTrackingEnabled(active.tracking_enabled);
+    if (syncedEyeIdRef.current !== selectedEyeId && eyes.length > 0) {
+      const active = eyes.find(e => e.node_id === selectedEyeId);
+      if (active && active.tracking_enabled !== undefined) {
+        setTrackingEnabled(active.tracking_enabled);
+      }
+      syncedEyeIdRef.current = selectedEyeId;
     }
   }, [selectedEyeId, eyes]);
 
@@ -104,13 +108,15 @@ export default function EyesModule({ token, permissions, requestPin: _requestPin
   const [ptzAction, setPtzAction] = useState<string | null>(null);
   const [ptzFeedback, setPtzFeedback] = useState<string | null>(null);
 
-  // Virtual Analog Joystick State
-  const [isJoystickActive, setIsJoystickActive] = useState<boolean>(false);
-  const [joystickOrigin, setJoystickOrigin] = useState<{ x: number; y: number } | null>(null);
-  const [joystickKnob, setJoystickKnob] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const joystickIntervalRef = useRef<any>(null);
-  const joystickKnobRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  const JOYSTICK_MAX_RADIUS = 46;
+  // Zoom Level (Percentage)
+  const [zoomLevel, setZoomLevel] = useState<number>(100);
+
+  // Click-and-Drag Pan/Tilt State (no ghost drag)
+  const isDraggingRef = useRef<boolean>(false);
+  const dragStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const lastDragSentRef = useRef<number>(0);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const holdIntervalRef = useRef<any>(null);
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const streamImgRef = useRef<HTMLImageElement>(null);
@@ -363,6 +369,7 @@ export default function EyesModule({ token, permissions, requestPin: _requestPin
   const handleToggleTracking = async () => {
     const nextState = !trackingEnabled;
     setTrackingEnabled(nextState);
+    setEyes(prev => prev.map(e => e.node_id === selectedEye.node_id ? { ...e, tracking_enabled: nextState } : e));
     try {
       await apiFetch(`/eyes/${selectedEye.node_id}/tracking`, token, {
         method: 'POST',
@@ -398,70 +405,54 @@ export default function EyesModule({ token, permissions, requestPin: _requestPin
     }
   };
 
-  const startContinuousPtz = () => {
-    if (joystickIntervalRef.current) return;
-    joystickIntervalRef.current = setInterval(() => {
-      const { x, y } = joystickKnobRef.current;
-      const dist = Math.hypot(x, y);
-      if (dist > 6) { // Deadzone of 6px
-        const normalizedPan = (x / JOYSTICK_MAX_RADIUS) * 10;
-        const normalizedTilt = -(y / JOYSTICK_MAX_RADIUS) * 10;
-        handleSendPtz('drag', normalizedPan, normalizedTilt);
-      }
-    }, 150);
+  // D-Pad Continuous Hold while pressing buttons
+  const startContinuousHold = (action: string, pan: number, tilt: number, zoom = 0) => {
+    handleSendPtz(action, pan, tilt, zoom);
+    if (holdIntervalRef.current) clearInterval(holdIntervalRef.current);
+    holdIntervalRef.current = setInterval(() => {
+      handleSendPtz(action, pan, tilt, zoom);
+    }, 140);
   };
 
-  const stopContinuousPtz = () => {
-    if (joystickIntervalRef.current) {
-      clearInterval(joystickIntervalRef.current);
-      joystickIntervalRef.current = null;
+  const stopContinuousHold = () => {
+    if (holdIntervalRef.current) {
+      clearInterval(holdIntervalRef.current);
+      holdIntervalRef.current = null;
     }
   };
 
+  // Click-and-Drag Pan/Tilt on Viewport (with native drag prevention)
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement).closest('button, input, .ptz-overlay-control')) return;
-    const rect = viewportRef.current?.getBoundingClientRect();
-    if (!rect) return;
-
-    const relX = e.clientX - rect.left;
-    const relY = e.clientY - rect.top;
-
-    setIsJoystickActive(true);
-    setJoystickOrigin({ x: relX, y: relY });
-    setJoystickKnob({ x: 0, y: 0 });
-    joystickKnobRef.current = { x: 0, y: 0 };
-    startContinuousPtz();
+    e.preventDefault();
+    isDraggingRef.current = true;
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    setIsDragging(true);
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isJoystickActive || !joystickOrigin || !viewportRef.current) return;
-    const rect = viewportRef.current.getBoundingClientRect();
-    const currentRelX = e.clientX - rect.left;
-    const currentRelY = e.clientY - rect.top;
+    if (!isDraggingRef.current) return;
+    e.preventDefault();
+    const dx = e.clientX - dragStartRef.current.x;
+    const dy = e.clientY - dragStartRef.current.y;
+    const dist = Math.hypot(dx, dy);
 
-    const rawDx = currentRelX - joystickOrigin.x;
-    const rawDy = currentRelY - joystickOrigin.y;
-    const distance = Math.hypot(rawDx, rawDy);
-
-    let knobX = rawDx;
-    let knobY = rawDy;
-
-    if (distance > JOYSTICK_MAX_RADIUS) {
-      knobX = (rawDx / distance) * JOYSTICK_MAX_RADIUS;
-      knobY = (rawDy / distance) * JOYSTICK_MAX_RADIUS;
+    if (dist >= 6) {
+      const now = Date.now();
+      if (now - lastDragSentRef.current > 80) {
+        const panDelta = Math.round(dx * 0.45);
+        const tiltDelta = Math.round(-dy * 0.45);
+        handleSendPtz('drag', panDelta, tiltDelta);
+        lastDragSentRef.current = now;
+        dragStartRef.current = { x: e.clientX, y: e.clientY };
+      }
     }
-
-    setJoystickKnob({ x: knobX, y: knobY });
-    joystickKnobRef.current = { x: knobX, y: knobY };
   };
 
   const handleMouseUp = () => {
-    if (isJoystickActive) {
-      stopContinuousPtz();
-      setIsJoystickActive(false);
-      setJoystickOrigin(null);
-      setJoystickKnob({ x: 0, y: 0 });
-      joystickKnobRef.current = { x: 0, y: 0 };
+    if (isDraggingRef.current) {
+      isDraggingRef.current = false;
+      setIsDragging(false);
     }
   };
 
@@ -546,18 +537,6 @@ export default function EyesModule({ token, permissions, requestPin: _requestPin
             </div>
 
             <div className="flex items-center gap-2">
-              <button
-                onClick={handleToggleTracking}
-                title={trackingEnabled ? (language === 'en' ? 'Disable Human Auto-Tracking' : 'Desactivar Seguimiento de Humanos') : (language === 'en' ? 'Enable Human Auto-Tracking' : 'Activar Seguimiento de Humanos')}
-                className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm active:scale-95 border ${
-                  trackingEnabled
-                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/25'
-                    : 'bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:bg-zinc-200'
-                }`}
-              >
-                <Target size={13} className={trackingEnabled ? 'animate-pulse text-emerald-500' : 'text-zinc-400'} />
-                <span>{language === 'en' ? (trackingEnabled ? 'Tracking: ON' : 'Tracking: OFF') : (trackingEnabled ? 'Seguimiento: ACTIVO' : 'Seguimiento: PAUSADO')}</span>
-              </button>
 
               <button
                 onClick={handleTakeManualSnapshot}
@@ -606,58 +585,42 @@ export default function EyesModule({ token, permissions, requestPin: _requestPin
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
-            className={`relative w-full bg-zinc-950 flex items-center justify-center transition-all overflow-hidden cursor-grab active:cursor-grabbing select-none ${
+            onTouchStart={(e) => {
+              if ((e.target as HTMLElement).closest('button, input, .ptz-overlay-control')) return;
+              const touch = e.touches[0];
+              isDraggingRef.current = true;
+              dragStartRef.current = { x: touch.clientX, y: touch.clientY };
+              setIsDragging(true);
+            }}
+            onTouchMove={(e) => {
+              if (!isDraggingRef.current) return;
+              const touch = e.touches[0];
+              const dx = touch.clientX - dragStartRef.current.x;
+              const dy = touch.clientY - dragStartRef.current.y;
+              const dist = Math.hypot(dx, dy);
+              if (dist >= 6) {
+                const now = Date.now();
+                if (now - lastDragSentRef.current > 80) {
+                  const panDelta = Math.round(dx * 0.45);
+                  const tiltDelta = Math.round(-dy * 0.45);
+                  handleSendPtz('drag', panDelta, tiltDelta);
+                  lastDragSentRef.current = now;
+                  dragStartRef.current = { x: touch.clientX, y: touch.clientY };
+                }
+              }
+            }}
+            onTouchEnd={() => {
+              isDraggingRef.current = false;
+              setIsDragging(false);
+            }}
+            draggable={false}
+            onDragStart={(e) => e.preventDefault()}
+            className={`relative w-full bg-zinc-950 flex items-center justify-center transition-all overflow-hidden ${isDragging ? "cursor-grabbing" : "cursor-grab"} select-none ${
               isFullscreen 
                 ? 'fixed inset-0 z-50 h-screen w-screen rounded-none' 
                 : 'aspect-video rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-inner'
             }`}
           >
-            {/* Virtual Analog Joystick Overlay (Follows Click & Hold) */}
-            {isJoystickActive && joystickOrigin && (
-              <div
-                className="absolute pointer-events-none z-30 -translate-x-1/2 -translate-y-1/2 select-none animate-[fadeIn_0.1s_ease-out]"
-                style={{ left: joystickOrigin.x, top: joystickOrigin.y }}
-              >
-                {/* Outer Base Ring */}
-                <div className="relative w-28 h-28 rounded-full bg-black/65 backdrop-blur-xl border-2 border-emerald-500/60 shadow-[0_0_25px_rgba(16,185,129,0.35)] flex items-center justify-center">
-                  {/* Directional crosshair lines */}
-                  <div className="absolute inset-x-2 top-1/2 -translate-y-1/2 h-px bg-white/25" />
-                  <div className="absolute inset-y-2 left-1/2 -translate-x-1/2 w-px bg-white/25" />
-                  
-                  {/* Directional Cardinal Labels */}
-                  <span className="absolute top-1 text-[8px] font-mono font-bold text-emerald-400">▲ TILT +</span>
-                  <span className="absolute bottom-1 text-[8px] font-mono font-bold text-emerald-400">▼ TILT -</span>
-                  <span className="absolute left-1.5 text-[8px] font-mono font-bold text-emerald-400">◄</span>
-                  <span className="absolute right-1.5 text-[8px] font-mono font-bold text-emerald-400">►</span>
-
-                  {/* Vector Trace line */}
-                  <svg className="absolute inset-0 w-full h-full pointer-events-none">
-                    <line
-                      x1="56"
-                      y1="56"
-                      x2={56 + joystickKnob.x}
-                      y2={56 + joystickKnob.y}
-                      stroke="rgba(52, 211, 153, 0.85)"
-                      strokeWidth="2.5"
-                      strokeDasharray="2 2"
-                    />
-                  </svg>
-
-                  {/* Thumbstick Knob */}
-                  <div
-                    className="absolute w-12 h-12 rounded-full bg-gradient-to-b from-zinc-100 to-zinc-400 dark:from-zinc-200 dark:to-zinc-500 border-2 border-white shadow-2xl flex items-center justify-center transition-transform duration-75"
-                    style={{
-                      transform: `translate(${joystickKnob.x}px, ${joystickKnob.y}px)`
-                    }}
-                  >
-                    <div className="w-5 h-5 rounded-full border border-zinc-400/80 bg-zinc-300/40 flex items-center justify-center">
-                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm animate-pulse" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
             {/* On-Screen PTZ Feedback Badge */}
             {ptzFeedback && (
               <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20 pointer-events-none bg-zinc-900/90 text-white border border-zinc-700 px-3 py-1 rounded-full text-[11px] font-mono shadow-xl flex items-center gap-1.5 animate-[fadeIn_0.2s_ease-out]">
@@ -666,46 +629,85 @@ export default function EyesModule({ token, permissions, requestPin: _requestPin
               </div>
             )}
 
-            {/* Bottom Left Joystick Hint */}
-            <div className="absolute bottom-3 left-3 text-[10px] text-zinc-300 font-mono pointer-events-none bg-black/65 backdrop-blur-xl px-3 py-1 rounded-full border border-white/10 z-10 shadow-md flex items-center gap-1.5">
+            {/* Bottom Left Drag-to-Pan Hint */}
+            <div className="absolute bottom-3 left-3 text-[10px] text-zinc-300 font-mono pointer-events-none bg-zinc-950/90 px-3 py-1 rounded-full border border-zinc-700/80 z-10 shadow-md flex items-center gap-1.5">
               <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span>{language === 'en' ? 'Joystick: Click & hold video to pan/tilt' : 'Joystick: Clic sostenido para panear'}</span>
+              <span>{language === 'en' ? 'Click & drag video to pan/tilt' : 'Clic y arrastrar video para mover cámara'}</span>
             </div>
 
             {/* Gamepad D-Pad Cruceta & Zoom Controls Overlay (Inside Video & Fullscreen) */}
-            <div className="absolute bottom-3 right-3 z-20 ptz-overlay-control flex flex-col items-center gap-1.5 bg-black/70 backdrop-blur-xl p-2.5 rounded-3xl border border-white/15 shadow-2xl select-none">
+            <div className="absolute bottom-3 right-3 z-20 ptz-overlay-control flex flex-col items-center gap-1.5 bg-zinc-950 border-2 border-zinc-700/90 shadow-2xl p-3 rounded-2xl select-none">
               
-              {/* Zoom Controls (Bumper style) */}
-              <div className="flex items-center gap-1.5 w-full justify-between pb-1 border-b border-white/10 text-white">
-                <button
-                  onClick={() => handleSendPtz('zoom_out', 0, 0, -1.0)}
-                  title="Zoom Out (-)"
-                  className="flex-1 py-1 px-2 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-[10px] font-bold font-mono flex items-center justify-center gap-1 transition-all"
-                >
-                  <ZoomOut size={12} />
-                  <span>ZOOM -</span>
-                </button>
-                <button
-                  onClick={() => handleSendPtz('zoom_in', 0, 0, 1.0)}
-                  title="Zoom In (+)"
-                  className="flex-1 py-1 px-2 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-[10px] font-bold font-mono flex items-center justify-center gap-1 transition-all"
-                >
-                  <ZoomIn size={12} />
-                  <span>ZOOM +</span>
-                </button>
+              {/* Zoom Bar with Percentage */}
+              <div className="flex flex-col gap-1 w-full pb-2 mb-1 border-b border-zinc-800 text-white">
+                <div className="flex items-center justify-between text-[10px] font-mono px-0.5">
+                  <span className="flex items-center gap-1 text-zinc-300 font-bold">
+                    <ZoomIn size={11} className="text-emerald-400" />
+                    <span>ZOOM</span>
+                  </span>
+                  <span className="text-emerald-400 font-bold bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-700/80 text-[10px]">
+                    {zoomLevel}%
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const next = Math.max(100, zoomLevel - 20);
+                      setZoomLevel(next);
+                      handleSendPtz('zoom', 0, 0, (next - 100) / 100);
+                    }}
+                    title="Reducir Zoom"
+                    className="w-5 h-5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 flex items-center justify-center text-xs font-bold active:scale-95 transition-all border border-zinc-700"
+                  >
+                    -
+                  </button>
+                  <input
+                    type="range"
+                    min="100"
+                    max="400"
+                    step="5"
+                    value={zoomLevel}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value);
+                      setZoomLevel(val);
+                      handleSendPtz('zoom', 0, 0, (val - 100) / 100);
+                    }}
+                    className="w-24 accent-emerald-500 h-1.5 bg-zinc-800 rounded-lg cursor-pointer"
+                  />
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const next = Math.min(400, zoomLevel + 20);
+                      setZoomLevel(next);
+                      handleSendPtz('zoom', 0, 0, (next - 100) / 100);
+                    }}
+                    title="Aumentar Zoom"
+                    className="w-5 h-5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 flex items-center justify-center text-xs font-bold active:scale-95 transition-all border border-zinc-700"
+                  >
+                    +
+                  </button>
+                </div>
               </div>
 
-              {/* Real Gamepad Cruceta (Plus Shape) */}
+              {/* Real Gamepad Cruceta (Plus Shape) - Solid Background & Continuous Hold */}
               <div className="relative w-28 h-28 flex items-center justify-center">
                 
                 {/* Up Wing */}
                 <button
-                  onClick={() => handleSendPtz('up', 0, 10)}
-                  title="Arriba / Tilt Up"
-                  className={`absolute top-0 w-9 h-10 rounded-t-xl flex items-center justify-center transition-all active:scale-95 border border-white/15 shadow-md ${
+                  onMouseDown={(e) => { e.stopPropagation(); startContinuousHold('up', 0, 10); }}
+                  onMouseUp={stopContinuousHold}
+                  onMouseLeave={stopContinuousHold}
+                  onTouchStart={(e) => { e.stopPropagation(); startContinuousHold('up', 0, 10); }}
+                  onTouchEnd={stopContinuousHold}
+                  onTouchCancel={stopContinuousHold}
+                  title="Arriba / Tilt Up (Mantener presionado)"
+                  className={`absolute top-0 w-9 h-10 rounded-t-xl flex items-center justify-center transition-all active:scale-95 border border-zinc-700 shadow-md ${
                     ptzAction === 'up'
                       ? 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.5)]'
-                      : 'bg-zinc-800/90 hover:bg-zinc-700 text-zinc-200'
+                      : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200'
                   }`}
                 >
                   <ArrowUp size={16} />
@@ -713,12 +715,17 @@ export default function EyesModule({ token, permissions, requestPin: _requestPin
 
                 {/* Left Wing */}
                 <button
-                  onClick={() => handleSendPtz('left', -10, 0)}
-                  title="Izquierda / Pan Left"
-                  className={`absolute left-0 w-10 h-9 rounded-l-xl flex items-center justify-center transition-all active:scale-95 border border-white/15 shadow-md ${
+                  onMouseDown={(e) => { e.stopPropagation(); startContinuousHold('left', -10, 0); }}
+                  onMouseUp={stopContinuousHold}
+                  onMouseLeave={stopContinuousHold}
+                  onTouchStart={(e) => { e.stopPropagation(); startContinuousHold('left', -10, 0); }}
+                  onTouchEnd={stopContinuousHold}
+                  onTouchCancel={stopContinuousHold}
+                  title="Izquierda / Pan Left (Mantener presionado)"
+                  className={`absolute left-0 w-10 h-9 rounded-l-xl flex items-center justify-center transition-all active:scale-95 border border-zinc-700 shadow-md ${
                     ptzAction === 'left'
                       ? 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.5)]'
-                      : 'bg-zinc-800/90 hover:bg-zinc-700 text-zinc-200'
+                      : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200'
                   }`}
                 >
                   <ArrowLeft size={16} />
@@ -726,12 +733,12 @@ export default function EyesModule({ token, permissions, requestPin: _requestPin
 
                 {/* Center Button (Reset / Center) */}
                 <button
-                  onClick={() => handleSendPtz('center')}
+                  onClick={(e) => { e.stopPropagation(); handleSendPtz('center'); }}
                   title="Recentrar Posición"
-                  className={`w-9 h-9 z-10 rounded-lg flex items-center justify-center transition-all active:scale-90 border border-white/20 shadow-inner ${
+                  className={`w-9 h-9 z-10 rounded-lg flex items-center justify-center transition-all active:scale-90 border border-zinc-700 shadow-inner ${
                     ptzAction === 'center'
                       ? 'bg-emerald-500 text-white'
-                      : 'bg-zinc-950/90 text-zinc-400 hover:text-white hover:bg-zinc-900'
+                      : 'bg-zinc-900 text-zinc-400 hover:text-white hover:bg-zinc-800'
                   }`}
                 >
                   <Focus size={14} />
@@ -739,12 +746,17 @@ export default function EyesModule({ token, permissions, requestPin: _requestPin
 
                 {/* Right Wing */}
                 <button
-                  onClick={() => handleSendPtz('right', 10, 0)}
-                  title="Derecha / Pan Right"
-                  className={`absolute right-0 w-10 h-9 rounded-r-xl flex items-center justify-center transition-all active:scale-95 border border-white/15 shadow-md ${
+                  onMouseDown={(e) => { e.stopPropagation(); startContinuousHold('right', 10, 0); }}
+                  onMouseUp={stopContinuousHold}
+                  onMouseLeave={stopContinuousHold}
+                  onTouchStart={(e) => { e.stopPropagation(); startContinuousHold('right', 10, 0); }}
+                  onTouchEnd={stopContinuousHold}
+                  onTouchCancel={stopContinuousHold}
+                  title="Derecha / Pan Right (Mantener presionado)"
+                  className={`absolute right-0 w-10 h-9 rounded-r-xl flex items-center justify-center transition-all active:scale-95 border border-zinc-700 shadow-md ${
                     ptzAction === 'right'
                       ? 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.5)]'
-                      : 'bg-zinc-800/90 hover:bg-zinc-700 text-zinc-200'
+                      : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200'
                   }`}
                 >
                   <ArrowRight size={16} />
@@ -752,12 +764,17 @@ export default function EyesModule({ token, permissions, requestPin: _requestPin
 
                 {/* Down Wing */}
                 <button
-                  onClick={() => handleSendPtz('down', 0, -10)}
-                  title="Abajo / Tilt Down"
-                  className={`absolute bottom-0 w-9 h-10 rounded-b-xl flex items-center justify-center transition-all active:scale-95 border border-white/15 shadow-md ${
+                  onMouseDown={(e) => { e.stopPropagation(); startContinuousHold('down', 0, -10); }}
+                  onMouseUp={stopContinuousHold}
+                  onMouseLeave={stopContinuousHold}
+                  onTouchStart={(e) => { e.stopPropagation(); startContinuousHold('down', 0, -10); }}
+                  onTouchEnd={stopContinuousHold}
+                  onTouchCancel={stopContinuousHold}
+                  title="Abajo / Tilt Down (Mantener presionado)"
+                  className={`absolute bottom-0 w-9 h-10 rounded-b-xl flex items-center justify-center transition-all active:scale-95 border border-zinc-700 shadow-md ${
                     ptzAction === 'down'
                       ? 'bg-emerald-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.5)]'
-                      : 'bg-zinc-800/90 hover:bg-zinc-700 text-zinc-200'
+                      : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200'
                   }`}
                 >
                   <ArrowDown size={16} />
@@ -769,11 +786,13 @@ export default function EyesModule({ token, permissions, requestPin: _requestPin
                 ref={streamImgRef}
                 src={currentStreamUrl}
                 alt="Live Stream"
+                draggable={false}
+                onDragStart={(e) => e.preventDefault()}
                 onError={() => setStreamError(true)}
                 crossOrigin="anonymous"
-                className="w-full h-full object-contain bg-zinc-950 transition-transform duration-300"
+                className="w-full h-full object-contain bg-zinc-950 transition-transform duration-300 pointer-events-none select-none"
                 style={{
-                  transform: `rotate(${rotation}deg) scaleX(${flipH ? -1 : 1}) scaleY(${flipV ? -1 : 1})`
+                  transform: `scale(${zoomLevel / 100}) rotate(${rotation}deg) scaleX(${flipH ? -1 : 1}) scaleY(${flipV ? -1 : 1})`
                 }}
               />
             ) : (

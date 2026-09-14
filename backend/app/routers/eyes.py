@@ -12,6 +12,8 @@ from .hardware import HardwareState
 
 router = APIRouter()
 
+_tracking_states: Dict[str, bool] = {}
+
 @router.get("", response_model=List[schemas.EyeNodeResponse])
 @router.get("/", response_model=List[schemas.EyeNodeResponse])
 def list_eyes(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
@@ -41,7 +43,7 @@ def list_eyes(db: Session = Depends(get_db), current_user: dict = Depends(get_cu
             gpu_load_pct=live_telemetry.get("gpu_load_pct"),
             temp_c=live_telemetry.get("temp_c"),
             link_status=live_telemetry.get("link_status", "Wi-Fi" if is_online else "Desconectado"),
-            tracking_enabled=live_telemetry.get("tracking_enabled", True)
+            tracking_enabled=_tracking_states.get(eye.node_id, live_telemetry.get("tracking_enabled", True))
         ))
     return results
 
@@ -217,8 +219,10 @@ class PTZPayload(BaseModel):
 
 @router.post("/{node_id}/tracking")
 def set_eye_tracking(node_id: str, payload: TrackingPayload, current_user: dict = Depends(get_current_user)):
-    if node_id in HardwareState.nodes:
-        HardwareState.nodes[node_id]["tracking_enabled"] = payload.enabled
+    _tracking_states[node_id] = payload.enabled
+    if node_id not in HardwareState.nodes:
+        HardwareState.nodes[node_id] = {}
+    HardwareState.nodes[node_id]["tracking_enabled"] = payload.enabled
     
     HardwareState.add_log(
         f"🎯 Seguimiento automático de humanos {'ACTIVADO' if payload.enabled else 'DESACTIVADO'} para [{node_id}]",
