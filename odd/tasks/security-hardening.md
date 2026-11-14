@@ -27,9 +27,9 @@ Branch: `chore/claude-odd-reorg` (reorg + test base), then `fix/security-hardeni
 | T3 | S7 | inline | done | 6a194ab — RED 10 failed; GREEN 30 passed |
 | T4 | S4 | inline | done | 7787584 (+89ff663 mcp<2 pin) — RED collection error; GREEN 46 passed |
 | T2 | S6 | inline | done | 997f1c9 — RED 13 failed; GREEN 62 passed |
-| T7 | S9 | inline | partial | allowlist enforced on callbacks via T4 actor; silence confirmation pending |
-| T8 | S10 | inline | pending | — |
-| T10 | S12 | inline | pending | — |
+| T7 | S9 | delegated | done | d7c1763 — RED 22 failed (no `handle_telegram_callback`, silence without PIN); GREEN 89 passed |
+| T8 | S10 | delegated | done | ff0519d — RED 12 WS + 8 eyes failed; GREEN 119 passed; `tsc -b` ok |
+| T10 | S12 | delegated | done | 8154b1b — RED collection error (no `ratelimit`) + 5 live-permission failed; GREEN 137 passed |
 | T5 | S8 | inline | pending | — |
 | T6 | S4 | inline | pending | — |
 | T9 | S11 | inline | pending | — |
@@ -50,3 +50,7 @@ Route evidence: all tasks inline; no Writer trigger (units are sequential and sh
 - L6: Found while pinning: `mcp` 2.x removed `mcp.server.fastmcp`; an unpinned rebuild would have broken the MCP server. Pinned `mcp==1.30.0`.
 - L7: Compatibility impact: the Eyes REST alert POST is rejected until E1 adds `X-SARI-Node-Key`; the MQTT `sari/alerts` path still triggers the siren (as `Actor.node`), so detection→siren keeps working over MQTT.
 - L8: Next: T7 (silence confirmation), T8 (WS JWT, Eyes RBAC), T10, T5, T6, T9, T11–T14, then E1 in the Eyes repo.
+- L9: T7/T8/T10 done by a delegated writer. T7: callback handling extracted to `handle_telegram_callback`; silence and gate buttons reply with `/silenciar <PIN>` / `/portones <PIN>` instead of acting; activation button stays one-tap for allow-listed chats.
+- L10: T8 deviation: no new permission column; Eyes mutations (create, update, delete, tracking, PTZ, test-connection) require `can_control_hardware`. UI WebSocket URL built by `realtimeWsUrl(token)` in `sari-ui/src/config.ts`; `EyesModule.tsx` left untouched (owner's uncommitted work).
+- L11: T10 deviations: client IP is `request.client.host` (X-Forwarded-For not trusted). Empty PINs are not counted as guesses. Telegram free text now tries only its last numeric token as the PIN (a single message could otherwise carry hundreds of guesses) and the PIN is redacted before the message is stored in chat history. Lockout state is in-memory per process.
+- L12: Open gap: `require_pin` callers in `routers/hardware.py` (`manual_action`) and `routers/chat.py` (4 calls) still pass no `key`, so their wrong PINs are not counted yet; they were outside the T10 edit surface. Fix: `require_pin(..., key=f"user:{current_user.get('id')}")`.
