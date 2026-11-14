@@ -175,6 +175,21 @@ def startup_event():
         start_background_services()
 
 
+@app.on_event("startup")
+async def start_realtime_listener():
+    # One LISTEN connection per API worker fans PostgreSQL NOTIFY events out to this worker's sockets.
+    import asyncio
+
+    from .adapters.realtime.ws_broadcast import start_listener
+    start_listener(asyncio.get_running_loop())
+
+
+@app.on_event("shutdown")
+async def stop_realtime_listener():
+    from .adapters.realtime.ws_broadcast import stop_listener
+    stop_listener()
+
+
 @app.on_event("shutdown")
 def shutdown_event():
     if run_background():
