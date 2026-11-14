@@ -156,7 +156,6 @@ def test_watchdog_marks_silent_online_node_offline_and_alerts_once(monkeypatch):
 
     sent = []
     monkeypatch.setattr(watchdog.telegram_service, "send_telegram_message", lambda text, **k: sent.append(text) or True)
-    monkeypatch.setattr(watchdog, "_disconnected_nodes_notified", set())
     now = time.time()
     HardwareState.nodes["W-silent"] = {"node_id": "W-silent", "ip": "10.0.0.40", "last_seen": now - 20, "is_online": True}
     HardwareState.nodes["W-fresh"] = {"node_id": "W-fresh", "last_seen": now, "is_online": True}

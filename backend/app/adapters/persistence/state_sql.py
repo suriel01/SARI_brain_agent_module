@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from ...domain.state import (
     LOG_CAPACITY, LOG_TIME_FORMAT, LOG_TTL_HOURS, RUNTIME_FIELDS, ActuatorState, RuntimeState, new_node,
 )
-from ...models.models import ActuatorStateRow, NodeStatus, OperationalLog
+from ...models.models import ActuatorStateRow, NodeFlags, NodeStatus, OperationalLog
 
 ROW_ID = 1
 
@@ -182,6 +182,53 @@ class SqlStateRepository:
                 session.execute(delete(NodeStatus).where(NodeStatus.node_id.in_(ids)))
                 session.commit()
             return ids
+
+    # -- node flags ---------------------------------------------------------------------------
+    def _set_flag(self, node_id: str, field: str, value, *, only_if=None) -> bool:
+        """Sets ``field`` (creating the row) when its current value is not ``value``; True when it changed.
+
+        ``only_if`` limits an update to rows whose current value equals it (the debounce test-and-set).
+        """
+        column = getattr(NodeFlags, field)
+        for attempt in (1, 2):
+            with self._session_factory() as session:
+                stmt = update(NodeFlags).where(NodeFlags.node_id == node_id)
+                stmt = stmt.where(column.is_(only_if) if only_if is not None else column.is_distinct_from(value))
+                if session.execute(stmt.values({field: value})).rowcount:
+                    session.commit()
+                    return True
+                if session.get(NodeFlags, node_id) is not None:
+                    return False
+                session.add(NodeFlags(node_id=node_id, **{"disconnect_notified": False, field: value}))
+                try:
+                    session.commit()
+                    return True
+                except IntegrityError:
+                    session.rollback()  # created concurrently: re-run as an update
+                    if attempt == 2:
+                        raise
+        return False
+
+    def mark_disconnect_notified(self, node_id: str) -> bool:
+        return self._set_flag(node_id, "disconnect_notified", True, only_if=False)
+
+    def clear_disconnect_notified(self, node_id: str) -> bool:
+        with self._session_factory() as session:
+            changed = session.execute(
+                update(NodeFlags).where(NodeFlags.node_id == node_id, NodeFlags.disconnect_notified.is_(True))
+                .values(disconnect_notified=False)
+            ).rowcount
+            session.commit()
+            return changed > 0
+
+    def set_tracking_enabled(self, node_id: str, enabled: bool) -> None:
+        self._set_flag(node_id, "tracking_enabled", bool(enabled))
+
+    def tracking_overrides(self) -> Dict[str, bool]:
+        with self._session_factory() as session:
+            rows = session.execute(select(NodeFlags.node_id, NodeFlags.tracking_enabled)
+                                   .where(NodeFlags.tracking_enabled.is_not(None))).all()
+            return {node_id: bool(enabled) for node_id, enabled in rows}
 
     # -- operational log ----------------------------------------------------------------------
     def add_log(self, msg: str, level: str = "INFO", camera_module: str = "SYS_CORE") -> None:

@@ -17,8 +17,6 @@ from ..netpolicy import validate_stream_url
 router = APIRouter()
 logger = logging.getLogger("sari_eyes")
 
-_tracking_states: Dict[str, bool] = {}
-
 @router.get("", response_model=List[schemas.EyeNodeResponse])
 @router.get("/", response_model=List[schemas.EyeNodeResponse])
 def list_eyes(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
@@ -26,6 +24,7 @@ def list_eyes(db: Session = Depends(get_db), current_user: dict = Depends(get_cu
     results = []
     now = time.time()
     live_nodes = state.list_nodes()
+    tracking = state.tracking_overrides()
 
     for eye in db_eyes:
         live_telemetry = live_nodes.get(eye.node_id, {})
@@ -49,7 +48,7 @@ def list_eyes(db: Session = Depends(get_db), current_user: dict = Depends(get_cu
             gpu_load_pct=live_telemetry.get("gpu_load_pct"),
             temp_c=live_telemetry.get("temp_c"),
             link_status=live_telemetry.get("link_status", None if is_online else "Desconectado"),
-            tracking_enabled=_tracking_states.get(eye.node_id, live_telemetry.get("tracking_enabled", True))
+            tracking_enabled=tracking.get(eye.node_id, live_telemetry.get("tracking_enabled", True))
         ))
     return results
 
@@ -236,7 +235,7 @@ class PTZPayload(BaseModel):
 
 @router.post("/{node_id}/tracking")
 def set_eye_tracking(node_id: str, payload: TrackingPayload, current_user: dict = Depends(require_hardware_user)):
-    _tracking_states[node_id] = payload.enabled
+    state.set_tracking_enabled(node_id, payload.enabled)
     state.merge_node(node_id, {"tracking_enabled": payload.enabled}, create=True)
     
     state.add_log(

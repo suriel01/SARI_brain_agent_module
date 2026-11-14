@@ -23,6 +23,8 @@ class MemoryState:
         self._runtime: Dict[str, Any] = {field: getattr(RuntimeState(), field) for field in RUNTIME_FIELDS}
         self._nodes: Dict[str, Dict[str, Any]] = {}
         self._logs: List[Dict[str, Any]] = []  # newest first; expires_at kept as datetime
+        self._disconnect_notified: set = set()
+        self._tracking: Dict[str, bool] = {}
 
     # -- actuators and counters
     def snapshot(self) -> RuntimeState:
@@ -114,6 +116,29 @@ class MemoryState:
             for node_id in stale:
                 del self._nodes[node_id]
             return stale
+
+    # -- node flags
+    def mark_disconnect_notified(self, node_id: str) -> bool:
+        with self._lock:
+            if node_id in self._disconnect_notified:
+                return False
+            self._disconnect_notified.add(node_id)
+            return True
+
+    def clear_disconnect_notified(self, node_id: str) -> bool:
+        with self._lock:
+            if node_id not in self._disconnect_notified:
+                return False
+            self._disconnect_notified.discard(node_id)
+            return True
+
+    def set_tracking_enabled(self, node_id: str, enabled: bool) -> None:
+        with self._lock:
+            self._tracking[node_id] = bool(enabled)
+
+    def tracking_overrides(self) -> Dict[str, bool]:
+        with self._lock:
+            return dict(self._tracking)
 
     # -- operational log
     def add_log(self, msg: str, level: str = "INFO", camera_module: str = "SYS_CORE") -> None:

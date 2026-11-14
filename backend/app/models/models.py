@@ -132,3 +132,12 @@ class RateLimitRow(Base):
     failures = Column(JSON, nullable=False)
     locked_until = Column(Float, nullable=True)
 
+
+class NodeFlags(Base):
+    """Per-node flags kept apart from the telemetry (which replaces ``node_status.data``)."""
+
+    __tablename__ = "node_flags"
+
+    node_id = Column(String(100), primary_key=True)
+    disconnect_notified = Column(Boolean, nullable=False, default=False)  # watchdog alert already sent
+    tracking_enabled = Column(Boolean, nullable=True)  # operator choice; None = node default

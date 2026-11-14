@@ -72,6 +72,18 @@ class StateRepository(Protocol):
     def prune_nodes(self, older_than: float, keep: Iterable[str]) -> List[str]:
         """Removes nodes not in ``keep`` whose last_seen is missing or older than ``older_than``."""
 
+    # Per-node flags that telemetry must not overwrite
+    def mark_disconnect_notified(self, node_id: str) -> bool:
+        """Atomic test-and-set of the watchdog debounce. True only for the caller that set it."""
+
+    def clear_disconnect_notified(self, node_id: str) -> bool:
+        """Re-arms the disconnection alert. True when it was set."""
+
+    def set_tracking_enabled(self, node_id: str, enabled: bool) -> None: ...
+
+    def tracking_overrides(self) -> Dict[str, bool]:
+        """Operator tracking choices by node id (nodes without a choice are absent)."""
+
     # Operational log (newest first, 24 h TTL, capped)
     def add_log(self, msg: str, level: str = "INFO", camera_module: str = "SYS_CORE") -> None: ...
 

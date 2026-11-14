@@ -204,3 +204,65 @@ def test_app_composition_uses_the_sql_repository():
 
     assert isinstance(composition.state, SqlStateRepository)
     assert composition.physical_action.state is composition.state
+
+
+# --- A3: per-node flags (watchdog debounce, operator tracking choice) -------------------------
+
+def test_disconnect_notified_is_a_test_and_set(repo):
+    assert repo.mark_disconnect_notified("n1") is True
+    assert repo.mark_disconnect_notified("n1") is False
+    assert repo.clear_disconnect_notified("n1") is True
+    assert repo.clear_disconnect_notified("n1") is False
+    assert repo.mark_disconnect_notified("n1") is True
+    assert repo.clear_disconnect_notified("never") is False
+
+
+def test_tracking_overrides_are_independent_of_node_data(repo):
+    assert repo.tracking_overrides() == {}
+    repo.set_tracking_enabled("n1", False)
+    repo.put_node("n1", {"node_id": "n1", "fps": 9.0})
+    repo.set_tracking_enabled("n2", True)
+    repo.set_tracking_enabled("n2", True)
+    assert repo.tracking_overrides() == {"n1": False, "n2": True}
+    repo.mark_disconnect_notified("n1")
+    assert repo.tracking_overrides()["n1"] is False
+    repo.set_tracking_enabled("n1", True)
+    assert repo.tracking_overrides()["n1"] is True
+    assert repo.mark_disconnect_notified("n2") is True
+
+
+def test_concurrent_debounce_marks_only_one_winner(repo):
+    winners = []
+    barrier = threading.Barrier(10)
+
+    def mark():
+        barrier.wait()
+        try:
+            if repo.mark_disconnect_notified("race"):
+                winners.append(1)
+        except Exception:
+            pass
+
+    threads = [threading.Thread(target=mark) for _ in range(10)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(winners) == 1
+
+
+def test_node_flags_survive_a_restart(tmp_path):
+    path = tmp_path / "flags.db"
+    engine = _migrated_engine(path)
+    before = SqlStateRepository(sessionmaker(bind=engine))
+    before.mark_disconnect_notified("n1")
+    before.set_tracking_enabled("n1", False)
+    engine.dispose()
+
+    engine = create_engine(f"sqlite:///{path}")
+    try:
+        after = SqlStateRepository(sessionmaker(bind=engine))
+        assert after.mark_disconnect_notified("n1") is False
+        assert after.tracking_overrides() == {"n1": False}
+    finally:
+        engine.dispose()
