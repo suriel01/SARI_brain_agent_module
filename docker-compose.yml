@@ -17,6 +17,7 @@ services:
               capabilities: [gpu]
     volumes:
       - ./backend/app:/app/app
+      - ./backend/migrations:/app/migrations
       - ./tests:/app/tests
     environment:
       - PORT=7000

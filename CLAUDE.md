@@ -33,6 +33,7 @@ The backend fails closed without these (`backend/app/config.py`):
 - Unit tests (no Docker needed): `python -m venv .venv && .venv/bin/pip install -r backend/requirements-dev.txt && .venv/bin/pytest tests/unit -q`
 - Integration tests (stack running): `docker exec -e PYTHONPATH=/app -t sari-backend pytest -m integration -q`
 - Lint: `.venv/bin/ruff check backend tests` and `cd sari-ui && npm run lint && npx tsc -b`
+- Schema: Alembic (`backend/alembic.ini`, `backend/migrations/`). The backend runs `init_db()` at startup: `upgrade head`, or for a pre-Alembic volume (tables but no `alembic_version`) additive legacy patches once and `stamp head`. Never use `create_all` or ad-hoc `ALTER` for new changes; add a revision instead: `cd backend && DATABASE_URL=<url> ../.venv/bin/alembic revision --autogenerate -m "<change>"`, review it, and never write destructive steps without a data plan. The baseline cannot be downgraded.
 
 ## Workflow
 - **ODD**: substantial work is tracked in `odd/tasks/<feature>.md` (`## Specs` with S#, `## Tasks`, `## Log`). Product specs live in `docs/specs/`.

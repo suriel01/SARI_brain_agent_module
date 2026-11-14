@@ -14,28 +14,68 @@ from .schemas import schemas
 from .crud import crud
 from .routers import auth, chat, hardware, users, alerts, eyes
 
-from sqlalchemy import text
+from pathlib import Path
+
+from sqlalchemy import inspect, text
+
+logger = logging.getLogger("sari_db")
+
+# backend/migrations locally, /app/migrations in the image: always next to the `app` package.
+MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
+
+_LEGACY_POSTGRES_PATCHES = (
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS can_create_chats BOOLEAN DEFAULT FALSE;",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS can_delete_chats BOOLEAN DEFAULT FALSE;",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS can_rename_chats BOOLEAN DEFAULT FALSE;",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS can_control_hardware BOOLEAN DEFAULT FALSE;",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS can_manage_users BOOLEAN DEFAULT FALSE;",
+    "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS snapshot TEXT;",
+)
 
 
-def init_db() -> None:
-    """Create extensions, tables and legacy column patches. Postgres-only statements are skipped elsewhere."""
-    is_postgres = engine.dialect.name == "postgresql"
-    if is_postgres:
-        with engine.connect() as conn:
-            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-            conn.commit()
+def alembic_config():
+    from alembic.config import Config
 
-    models.Base.metadata.create_all(bind=engine)
+    cfg = Config()
+    cfg.set_main_option("script_location", str(MIGRATIONS_DIR))
+    return cfg
 
-    if is_postgres:
-        with engine.connect() as conn:
-            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_create_chats BOOLEAN DEFAULT FALSE;"))
-            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_delete_chats BOOLEAN DEFAULT FALSE;"))
-            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_rename_chats BOOLEAN DEFAULT FALSE;"))
-            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_control_hardware BOOLEAN DEFAULT FALSE;"))
-            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_manage_users BOOLEAN DEFAULT FALSE;"))
-            conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS snapshot TEXT;"))
-            conn.commit()
+
+def _adopt_legacy_schema(connection) -> None:
+    """Brings a pre-Alembic database (built by ``create_all``) up to the baseline without touching data.
+
+    Only additive statements: missing tables are created and missing columns added; nothing is
+    dropped or altered.
+    """
+    if connection.dialect.name == "postgresql":
+        connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+    models.Base.metadata.create_all(bind=connection, checkfirst=True)
+    if connection.dialect.name == "postgresql":
+        for statement in _LEGACY_POSTGRES_PATCHES:
+            connection.execute(text(statement))
+
+
+def init_db(bind=None) -> None:
+    """Applies the schema through Alembic.
+
+    - Existing deployment (app tables but no ``alembic_version``): legacy additive patches once, then
+      ``stamp head``. Data is never dropped or rewritten.
+    - Otherwise (fresh or already versioned database): ``upgrade head``.
+    """
+    from alembic import command
+
+    bind = bind if bind is not None else engine
+    cfg = alembic_config()
+    with bind.begin() as connection:
+        cfg.attributes["connection"] = connection
+        tables = set(inspect(connection).get_table_names())
+        app_tables = tables & set(models.Base.metadata.tables)
+        if app_tables and "alembic_version" not in tables:
+            logger.warning("Database has no alembic_version: adopting the existing schema and stamping head")
+            _adopt_legacy_schema(connection)
+            command.stamp(cfg, "head")
+        else:
+            command.upgrade(cfg, "head")
 
 
 app = FastAPI(title="SARI Brain Agent Backend")
