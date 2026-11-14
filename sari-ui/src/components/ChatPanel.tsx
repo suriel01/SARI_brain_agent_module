@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User, MessageSquarePlus, Edit2, Trash2, PanelLeftOpen, PanelLeftClose } from 'lucide-react';
 import { apiFetch, readErrorDetail } from '../api';
+import { realtimeWsUrl } from '../config';
 import type { Permissions } from '../permissions';
 import { useLanguage } from '../i18n/LanguageContext';
 
@@ -250,8 +251,7 @@ export default function ChatPanel({ token, permissions, requestPin, fetchState, 
   }, [lastAlertThreadId]);
 
   useEffect(() => {
-    const wsUrl = window.location.hostname === 'localhost' ? 'ws://localhost:8000/ws' : `ws://${window.location.hostname}:8000/ws`;
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(realtimeWsUrl(token));
 
     ws.onmessage = (event) => {
       try {
@@ -272,7 +272,7 @@ export default function ChatPanel({ token, permissions, requestPin, fetchState, 
     };
 
     return () => ws.close();
-  }, [activeThreadId]);
+  }, [activeThreadId, token]);
 
   useEffect(() => {
     if (activeThreadId) {

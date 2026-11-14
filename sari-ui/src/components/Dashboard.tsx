@@ -7,6 +7,7 @@ import PinModal from './PinModal';
 import EyesModule from './EyesModule';
 import CircuitCanvas from './CircuitCanvas';
 import { apiFetch } from '../api';
+import { realtimeWsUrl } from '../config';
 import type { Permissions } from '../permissions';
 import { useLanguage } from '../i18n/LanguageContext';
 
@@ -52,8 +53,7 @@ export default function Dashboard({ token, role, permissions, onLogout, isDarkMo
   }, [token]);
 
   useEffect(() => {
-    const wsUrl = window.location.hostname === 'localhost' ? 'ws://localhost:8000/ws' : `ws://${window.location.hostname}:8000/ws`;
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(realtimeWsUrl(token));
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
@@ -65,7 +65,7 @@ export default function Dashboard({ token, role, permissions, onLogout, isDarkMo
       }
     };
     return () => ws.close();
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {

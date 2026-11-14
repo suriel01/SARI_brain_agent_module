@@ -7,7 +7,7 @@ import urllib.parse
 from ..database import get_db
 from ..models import models
 from ..schemas import schemas
-from .deps import get_current_user
+from .deps import get_current_user, require_hardware_user
 from ..security import require_pin
 from .hardware import HardwareState
 
@@ -50,7 +50,7 @@ def list_eyes(db: Session = Depends(get_db), current_user: dict = Depends(get_cu
 
 @router.post("", response_model=schemas.EyeNodeResponse, status_code=status.HTTP_201_CREATED)
 @router.post("/", response_model=schemas.EyeNodeResponse, status_code=status.HTTP_201_CREATED)
-def create_eye(eye_in: schemas.EyeNodeCreate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+def create_eye(eye_in: schemas.EyeNodeCreate, db: Session = Depends(get_db), current_user: dict = Depends(require_hardware_user)):
     existing = db.query(models.EyeNode).filter(models.EyeNode.node_id == eye_in.node_id).first()
     if existing:
         raise HTTPException(status_code=400, detail=f"El nodo Ojo '{eye_in.node_id}' ya existe.")
@@ -81,7 +81,7 @@ def create_eye(eye_in: schemas.EyeNodeCreate, db: Session = Depends(get_db), cur
     )
 
 @router.put("/{node_id}", response_model=schemas.EyeNodeResponse)
-def update_eye(node_id: str, eye_up: schemas.EyeNodeUpdate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+def update_eye(node_id: str, eye_up: schemas.EyeNodeUpdate, db: Session = Depends(get_db), current_user: dict = Depends(require_hardware_user)):
     eye = db.query(models.EyeNode).filter(models.EyeNode.node_id == node_id).first()
     if not eye:
         raise HTTPException(status_code=404, detail="Nodo Ojo no encontrado")
@@ -153,7 +153,7 @@ def update_eye(node_id: str, eye_up: schemas.EyeNodeUpdate, db: Session = Depend
     )
 
 @router.delete("/{node_id}")
-def delete_eye(node_id: str, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+def delete_eye(node_id: str, db: Session = Depends(get_db), current_user: dict = Depends(require_hardware_user)):
     eye = db.query(models.EyeNode).filter(models.EyeNode.node_id == node_id).first()
     if not eye:
         raise HTTPException(status_code=404, detail="Nodo Ojo no encontrado")
@@ -164,7 +164,7 @@ def delete_eye(node_id: str, db: Session = Depends(get_db), current_user: dict =
     return {"status": "success", "message": f"Nodo Ojo {node_id} eliminado"}
 
 @router.post("/test-connection")
-def test_connection(req: schemas.TestConnectionRequest, current_user: dict = Depends(get_current_user)):
+def test_connection(req: schemas.TestConnectionRequest, current_user: dict = Depends(require_hardware_user)):
     target = req.target_url.strip()
     if not target.startswith("http://") and not target.startswith("https://"):
         target = f"http://{target}"
@@ -218,7 +218,7 @@ class PTZPayload(BaseModel):
     zoom_delta: Optional[float] = 0.0
 
 @router.post("/{node_id}/tracking")
-def set_eye_tracking(node_id: str, payload: TrackingPayload, current_user: dict = Depends(get_current_user)):
+def set_eye_tracking(node_id: str, payload: TrackingPayload, current_user: dict = Depends(require_hardware_user)):
     _tracking_states[node_id] = payload.enabled
     if node_id not in HardwareState.nodes:
         HardwareState.nodes[node_id] = {}
@@ -243,7 +243,7 @@ def set_eye_tracking(node_id: str, payload: TrackingPayload, current_user: dict 
     return {"status": "success", "node_id": node_id, "tracking_enabled": payload.enabled}
 
 @router.post("/{node_id}/ptz")
-def send_ptz_command(node_id: str, payload: PTZPayload, current_user: dict = Depends(get_current_user)):
+def send_ptz_command(node_id: str, payload: PTZPayload, current_user: dict = Depends(require_hardware_user)):
     try:
         from ..mqtt.client import get_mqtt_client
         import json
