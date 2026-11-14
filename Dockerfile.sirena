@@ -13,6 +13,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY sirena_service.py /app/
 
+# Run unprivileged. uid 1000 matches the host user that owns the PulseAudio socket;
+# compose adds the audio group for /dev/snd.
+RUN useradd --uid 1000 --create-home --shell /usr/sbin/nologin sari
+USER sari
+
 EXPOSE 5000
 
 CMD ["python3", "sirena_service.py"]

@@ -29,7 +29,7 @@
   │     ├── WebSocket & API REST para SOC Dashboard             │
   │     └── Motor de Integración Bidireccional con Telegram     │
   │                                                             │
-  │   [PostgreSQL 15 + pgvector] (Puerto 5433)                  │
+  │   [PostgreSQL 15 + pgvector] (red interna)                  │
   │     └── Persistencia de chats, usuarios, eventos y nodos    │
   │                                                             │
   │   [Microservicio de Sirena Táctica] (Puerto 5000)           │
@@ -103,7 +103,7 @@
 - **Host (Servidor Central)**:
   - Linux (Ubuntu 22.04 LTS o superior recomendado).
   - [Docker](https://docs.docker.com/get-docker/) y [Docker Compose](https://docs.docker.com/compose/install/).
-  - Puertos libres: `5173` (Frontend), `7000` (Backend API), `1883` (MQTT), `5000` (Sirena), `5433` (PostgreSQL).
+  - Puertos libres: `5173` (Frontend), `7000` (Backend API), `1883`/`8883` (MQTT / MQTT TLS). PostgreSQL y la sirena solo son accesibles dentro de la red Docker (`docker exec -it sari_postgres psql -U sari_user -d sari_db`).
 - **Nodos Periféricos (Módulos Ojos)**:
   - NVIDIA Jetson Orin Nano / Nano / Xavier NX con JetPack.
   - Python 3.8+ con `paho-mqtt`, `psutil` y `requests`.

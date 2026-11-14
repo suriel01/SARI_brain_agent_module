@@ -11,7 +11,8 @@ SARI (Sistema Autónomo de Respuesta a Intrusiones) is a **physical security sys
   - `mosquitto/config/acl` (committed): the brain logs in as `sari_brain` (reads `sari/#`, writes `sari/nodes/+/ptz|tracking|config`); each vision node logs in with its node id as username and may only write `sari/nodes/<id>/telemetry|status|alerts` and read `sari/nodes/<id>/ptz|tracking|config`. `sari_operator` is a transitional account for the deployed Jetson (`Jetson-PTZ_1` + legacy `sari/alerts`), to be removed by E1.
   - MQTT alerts: `sari/nodes/<id>/alerts` binds the siren actor to `<id>` from the topic (the ACL proves it). Legacy `sari/alerts` (actor taken from the payload, unverifiable) is accepted only while `SARI_MQTT_LEGACY_ALERTS=true` (default during the transition).
   - TLS (8883): `scripts/gen-mqtt-certs.sh <broker-host-or-ip> [...]` writes a local CA and server cert to `mosquitto/certs/` (gitignored), then `mv mosquitto/config/conf.d/tls.conf.example mosquitto/config/conf.d/tls.conf` and restart `sari-mqtt`. Nodes get only `ca.crt`. Plain 1883 stays open until every node uses TLS.
-- PostgreSQL 15 + pgvector.
+- PostgreSQL 15 + pgvector — internal only (not published on the host): `docker exec -it sari_postgres psql -U sari_user -d sari_db`.
+- Containers run unprivileged: backend uid 10001, siren uid 1000 + `audio` group (host PulseAudio socket from `${XDG_RUNTIME_DIR:-/run/user/1000}`, cookie from `${HOME}/.config/pulse/cookie`), UI on `nginx-unprivileged` (container port 8080, host 5173). The UI WebSocket uses the same host/port as `VITE_API_BASE` (`realtimeWsUrl` in `sari-ui/src/config.ts`).
 
 ## Required environment (`.env`, never committed)
 Run `scripts/init-env.sh` to create or complete `.env` with strong random values; it never prints secrets (see `--help` for `--replace-insecure`, `--apply-mosquitto`, `--apply-postgres`).
