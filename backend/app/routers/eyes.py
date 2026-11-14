@@ -41,13 +41,13 @@ def list_eyes(db: Session = Depends(get_db), current_user: dict = Depends(get_cu
             is_active=eye.is_active,
             created_at=eye.created_at,
             is_online=is_online,
-            fps=live_telemetry.get("fps", 30.0 if is_online else 0.0),
+            fps=live_telemetry.get("fps"),
             ram_used_gb=live_telemetry.get("ram_used_gb"),
             ram_total_gb=live_telemetry.get("ram_total_gb"),
             cpu_load_pct=live_telemetry.get("cpu_load_pct"),
             gpu_load_pct=live_telemetry.get("gpu_load_pct"),
             temp_c=live_telemetry.get("temp_c"),
-            link_status=live_telemetry.get("link_status", "Wi-Fi" if is_online else "Desconectado"),
+            link_status=live_telemetry.get("link_status", None if is_online else "Desconectado"),
             tracking_enabled=_tracking_states.get(eye.node_id, live_telemetry.get("tracking_enabled", True))
         ))
     return results
@@ -147,7 +147,7 @@ def update_eye(node_id: str, eye_up: schemas.EyeNodeUpdate, db: Session = Depend
         is_active=eye.is_active,
         created_at=eye.created_at,
         is_online=is_online,
-        fps=live_telemetry.get("fps", 30.0 if is_online else 0.0),
+        fps=live_telemetry.get("fps"),
         ram_used_gb=live_telemetry.get("ram_used_gb"),
         ram_total_gb=live_telemetry.get("ram_total_gb"),
         cpu_load_pct=live_telemetry.get("cpu_load_pct"),

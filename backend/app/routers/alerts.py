@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
@@ -59,7 +59,7 @@ def get_alerts_status_and_logs(db: Session = Depends(get_db), current_user: dict
 @router.post("/alerta")
 @router.post("/alertas")
 @router.post("/")
-def receive_alert_event(req: AlertEventRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db), node_id: str = Depends(require_node)):
+def receive_alert_event(req: AlertEventRequest, background_tasks: BackgroundTasks, request: Request, db: Session = Depends(get_db), node_id: str = Depends(require_node)):
     conf = req.confidence
     if conf is None and req.metadata:
         conf = float(req.metadata.get("confidence", 0.90))
@@ -75,7 +75,7 @@ def receive_alert_event(req: AlertEventRequest, background_tasks: BackgroundTask
         message=req.message,
         confidence=conf,
         snapshot=normalize_snapshot(req.snapshot or req.image_base64),
-        node_ip="192.168.55.1",
+        node_ip=request.client.host if request.client else None,
         background_tasks=background_tasks,
     )
     return {

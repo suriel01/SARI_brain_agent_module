@@ -180,8 +180,8 @@ def handle_telegram_command(text: str, from_chat_id: Any) -> str:
         nodes_info = []
         for nid, node in HardwareState.nodes.items():
             st = "🟢 ONLINE" if node.get("is_online", True) else "⚪ STANDBY"
-            ip = node.get("ip", "N/A")
-            fps = node.get("fps", 30.0)
+            ip = node.get("ip") or "IP desconocida"
+            fps = node.get("fps") if node.get("fps") is not None else "?"
             nodes_info.append(f"• `{nid}` ({st}): `{ip}` @ {fps} FPS")
         nodes_text = "\n".join(nodes_info) if nodes_info else "• Ningún nodo registrado"
 
@@ -252,7 +252,7 @@ def handle_telegram_command(text: str, from_chat_id: Any) -> str:
                 for n_id in valid_node_ids:
                     eye = node_map.get(n_id)
                     name = eye.name if eye else HardwareState.nodes.get(n_id, {}).get("name", n_id)
-                    ip = eye.ip if eye else HardwareState.nodes.get(n_id, {}).get("ip", "192.168.55.1")
+                    ip = eye.ip if eye else HardwareState.nodes.get(n_id, {}).get("ip") or "IP desconocida"
                     stream_url = eye.stream_url if eye else None
                     hw_node = HardwareState.nodes.get(n_id, {})
                     is_online = hw_node.get("is_online", True) if n_id in HardwareState.nodes else (eye.is_active if eye else True)
@@ -289,7 +289,7 @@ def handle_telegram_command(text: str, from_chat_id: Any) -> str:
 
                 eye = node_map.get(matched_node_id)
                 name = eye.name if eye else HardwareState.nodes.get(matched_node_id, {}).get("name", matched_node_id)
-                ip = eye.ip if eye else HardwareState.nodes.get(matched_node_id, {}).get("ip", "192.168.55.1")
+                ip = eye.ip if eye else HardwareState.nodes.get(matched_node_id, {}).get("ip") or "IP desconocida"
                 stream_url = eye.stream_url if eye else None
 
                 snapshot = fetch_node_snapshot(matched_node_id, stream_url, db)
@@ -310,7 +310,7 @@ def handle_telegram_command(text: str, from_chat_id: Any) -> str:
 
             eye = node_map.get(target_node_id)
             name = eye.name if eye else HardwareState.nodes.get(target_node_id, {}).get("name", target_node_id)
-            ip = eye.ip if eye else HardwareState.nodes.get(target_node_id, {}).get("ip", "192.168.55.1")
+            ip = eye.ip if eye else HardwareState.nodes.get(target_node_id, {}).get("ip") or "IP desconocida"
             stream_url = eye.stream_url if eye else None
             snapshot = fetch_node_snapshot(target_node_id, stream_url, db)
             if snapshot:
