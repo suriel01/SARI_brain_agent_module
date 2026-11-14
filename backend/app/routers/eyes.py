@@ -4,14 +4,18 @@ from typing import List, Optional, Dict, Any
 import requests
 import time
 import urllib.parse
+import logging
+import socket
 from ..database import get_db
 from ..models import models
 from ..schemas import schemas
 from .deps import get_current_user, require_hardware_user
 from ..security import require_pin
 from .hardware import HardwareState
+from ..netpolicy import validate_stream_url
 
 router = APIRouter()
+logger = logging.getLogger("sari_eyes")
 
 _tracking_states: Dict[str, bool] = {}
 
@@ -166,14 +170,27 @@ def delete_eye(node_id: str, db: Session = Depends(get_db), current_user: dict =
 @router.post("/test-connection")
 def test_connection(req: schemas.TestConnectionRequest, current_user: dict = Depends(require_hardware_user)):
     target = req.target_url.strip()
-    if not target.startswith("http://") and not target.startswith("https://"):
+    if "://" not in target:
         target = f"http://{target}"
+    try:
+        validate_stream_url(target)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"Target not allowed: {exc}")
 
     start_t = time.time()
+    parts = urllib.parse.urlsplit(target)
+    if parts.scheme.lower() == "rtsp":
+        try:
+            with socket.create_connection((parts.hostname, parts.port or 554), timeout=2.0):
+                pass
+            return {"reachable": True, "latency_ms": round((time.time() - start_t) * 1000, 1), "content_type": "rtsp"}
+        except OSError:
+            return {"reachable": False, "error": "connection failed", "latency_ms": round((time.time() - start_t) * 1000, 1)}
+
     try:
-        res = requests.get(target, timeout=2.0, stream=True)
+        # No redirects: a node could otherwise bounce the request to a disallowed address.
+        res = requests.get(target, timeout=2.0, stream=True, allow_redirects=False)
         latency_ms = round((time.time() - start_t) * 1000, 1)
-        # Check if ok or redirect or streaming
         reachable = res.status_code in [200, 204, 301, 302]
         return {
             "reachable": reachable,
@@ -183,9 +200,10 @@ def test_connection(req: schemas.TestConnectionRequest, current_user: dict = Dep
         }
     except Exception as e:
         latency_ms = round((time.time() - start_t) * 1000, 1)
+        logger.info("Connection test to %s failed: %s", target, e)
         return {
             "reachable": False,
-            "error": str(e),
+            "error": "connection failed",
             "latency_ms": latency_ms
         }
 

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import List, Optional
 from datetime import datetime
 
@@ -80,10 +80,28 @@ class EyeNodeBase(BaseModel):
     yolo_threshold: Optional[float] = 0.70
     is_active: Optional[bool] = True
 
-class EyeNodeCreate(EyeNodeBase):
+class _NodeAddressPolicy:
+    """S11: operator-supplied node addresses must point at a private vision node (422 otherwise)."""
+
+    @field_validator("ip", check_fields=False)
+    @classmethod
+    def _check_ip(cls, v):
+        from ..netpolicy import validate_node_host
+
+        return None if v is None else validate_node_host(v)
+
+    @field_validator("stream_url", check_fields=False)
+    @classmethod
+    def _check_stream_url(cls, v):
+        from ..netpolicy import validate_stream_url
+
+        return None if v is None else validate_stream_url(v)
+
+
+class EyeNodeCreate(_NodeAddressPolicy, EyeNodeBase):
     pass
 
-class EyeNodeUpdate(BaseModel):
+class EyeNodeUpdate(_NodeAddressPolicy, BaseModel):
     name: Optional[str] = None
     ip: Optional[str] = None
     stream_url: Optional[str] = None

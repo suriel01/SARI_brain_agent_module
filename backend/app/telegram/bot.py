@@ -13,6 +13,7 @@ from ..database import SessionLocal
 from ..routers.hardware import Actor, HardwareState, execute_physical_tool
 from ..crud import crud
 from ..models import models
+from ..netpolicy import is_allowed_stream_url
 
 logger = logging.getLogger("sari_telegram")
 
@@ -100,14 +101,17 @@ def fetch_node_snapshot(node_id: str, stream_url: Optional[str], db) -> Optional
         urls_to_try.append(f"http://{node_ip}:8080/mjpeg")
 
     for u in urls_to_try:
+        if not is_allowed_stream_url(u):
+            logger.warning(f"[TELEGRAM] Refused snapshot fetch for node {node_id}: address outside the node network policy")
+            continue
         try:
             if "/snapshot" in u:
-                res = requests.get(u, timeout=2.0)
+                res = requests.get(u, timeout=2.0, allow_redirects=False)
                 if res.status_code == 200 and len(res.content) > 1000 and res.content.startswith(b"\xff\xd8"):
                     logger.info(f"[TELEGRAM] Live snapshot captured via {u} ({len(res.content)} bytes)")
                     return f"data:image/jpeg;base64,{base64.b64encode(res.content).decode('utf-8')}"
             else:
-                res = requests.get(u, stream=True, timeout=2.5)
+                res = requests.get(u, stream=True, timeout=2.5, allow_redirects=False)
                 if res.status_code == 200:
                     bytes_data = b""
                     for chunk in res.iter_content(chunk_size=4096):
