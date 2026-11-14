@@ -7,7 +7,7 @@ import paho.mqtt.client as mqtt
 BROKER_HOST = os.environ.get("MQTT_BROKER_HOST", "sari-mqtt")
 BROKER_PORT = int(os.environ.get("MQTT_BROKER_PORT", 1883))
 BROKER_USER = os.environ.get("MQTT_USER", "sari_operator")
-BROKER_PASS = os.environ["MQTT_PASSWORD"]
+BROKER_PASS = os.environ.get("MQTT_PASSWORD", "")  # read lazily: module is imported even when integration tests are deselected
 
 def test_mqtt_alert_ingestion_and_db_persistence():
     from app.database import SessionLocal

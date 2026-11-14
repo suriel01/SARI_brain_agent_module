@@ -7,7 +7,7 @@ import os
 BROKER_HOST = os.environ.get("MQTT_BROKER_HOST", "sari-mqtt")
 BROKER_PORT = 1883
 BROKER_USER = "sari_operator"
-BROKER_PASS = os.environ["MQTT_PASSWORD"]
+BROKER_PASS = os.environ.get("MQTT_PASSWORD", "")  # read lazily: module is imported even when integration tests are deselected
 
 def test_mqtt_telemetry_publish_and_receive():
     received = []
