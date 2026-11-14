@@ -11,6 +11,7 @@ SARI (Sistema Autónomo de Respuesta a Intrusiones) is a **physical security sys
 - PostgreSQL 15 + pgvector.
 
 ## Required environment (`.env`, never committed)
+Run `scripts/init-env.sh` to create or complete `.env` with strong random values; it never prints secrets (see `--help` for `--replace-insecure`, `--apply-mosquitto`, `--apply-postgres`).
 The backend fails closed without these (`backend/app/config.py`):
 - `SARI_SECRET_KEY` — 32+ chars (`openssl rand -hex 32`)
 - `SARI_SECURITY_PIN` — 4+ digits, not `1234`
