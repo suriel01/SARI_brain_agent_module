@@ -10,6 +10,8 @@ from ..database import get_db, SessionLocal
 from ..crud import crud
 from .hardware import Actor, execute_physical_tool, HardwareState
 from ..telegram.service import send_telegram_alert_photo
+from ..node_auth import require_node
+from .deps import get_current_user
 
 router = APIRouter()
 
@@ -68,7 +70,7 @@ import time
 @router.get("/event")
 @router.get("/event/")
 @router.get("/")
-def get_alerts_status_and_logs(db: Session = Depends(get_db)):
+def get_alerts_status_and_logs(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Endpoint GET para consultar el estado del receptor de alertas y ver el historial de detecciones."""
     db_events = db.query(models.EventLog).order_by(models.EventLog.timestamp.desc()).limit(20).all()
     events_list = [
@@ -99,7 +101,7 @@ def get_alerts_status_and_logs(db: Session = Depends(get_db)):
 @router.post("/alerta")
 @router.post("/alertas")
 @router.post("/")
-def receive_alert_event(req: AlertEventRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+def receive_alert_event(req: AlertEventRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db), node_id: str = Depends(require_node)):
     admin_user = crud.get_user_by_username(db, "admin")
     user_id = admin_user.id if admin_user else 1
 
@@ -189,7 +191,7 @@ def receive_alert_event(req: AlertEventRequest, background_tasks: BackgroundTask
     siren_response = None
     if req.event_type == "intrusion" and conf >= 0.70:
         
-        siren_response = execute_physical_tool("activar_sirena", {"duracion_segundos": 30}, actor=Actor.node(module_clean))
+        siren_response = execute_physical_tool("activar_sirena", {"duracion_segundos": 30}, actor=Actor.node(node_id))
         crud.add_message(db, thread.id, role="system", content="🔊 Respuesta física iniciada: Sirena activada por 30s mediante orden automática.")
         
         # Broadcast the siren state to React via Websocket

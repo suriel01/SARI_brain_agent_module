@@ -23,6 +23,7 @@ logger = logging.getLogger("jetson_agent")
 
 # Configuration
 NODE_ID = os.environ.get("JETSON_NODE_ID", "Jetson-PTZ_1")
+NODE_KEY = os.environ.get("SARI_NODE_KEY", "")
 NODE_NAME = os.environ.get("JETSON_NODE_NAME", "Jetson Orin Nano (PTZ 1)")
 NODE_IP = os.environ.get("JETSON_NODE_IP", "192.168.1.73")
 
@@ -155,7 +156,7 @@ def get_jetson_metrics():
 def send_http_fallback(data: dict) -> bool:
     for url in CEREBRO_HTTP_URLS:
         try:
-            res = requests.post(url, json=data, timeout=1.5)
+            res = requests.post(url, json=data, headers={"X-SARI-Node-Key": NODE_KEY}, timeout=1.5)
             if res.status_code == 200:
                 logger.info(f"[HTTP Fallback] Telemetry delivered to {url}")
                 return True

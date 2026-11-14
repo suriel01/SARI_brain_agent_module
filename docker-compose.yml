@@ -25,6 +25,7 @@ services:
       - OLLAMA_MODEL=qwen2.5:7b
       - SIRENA_SERVICE_URL=http://sari-sirena:5000
       - SARI_SIREN_TOKEN=${SARI_SIREN_TOKEN:?set SARI_SIREN_TOKEN in .env}
+      - SARI_NODE_KEYS=${SARI_NODE_KEYS:-}
       - DATABASE_URL=postgresql://sari_user:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres_db:5432/sari_db
       - OPENAI_API_BASE=http://host.docker.internal:11434/v1
       - OPENAI_BASE_URL=http://host.docker.internal:11434/v1

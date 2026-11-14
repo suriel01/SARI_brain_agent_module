@@ -18,6 +18,7 @@ The backend fails closed without these (`backend/app/config.py`):
 - `POSTGRES_PASSWORD` — on an existing volume the DB keeps its old password; change it with `ALTER USER sari_user PASSWORD '...'` first
 - `SARI_SIREN_TOKEN` — shared secret between backend and siren service
 - `SARI_ADMIN_PASSWORD` — only needed when no `admin` user exists yet
+- `SARI_NODE_KEYS` — `node_id:key,...`; vision nodes send `X-SARI-Node-Key`. Empty means every node request is rejected
 - `SARI_MCP_HARDWARE_ENABLED` — optional, `true` lets the local MCP server (`backend/app/sari_mcp_server.py`) drive hardware; default off
 
 ## Commands

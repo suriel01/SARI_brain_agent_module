@@ -13,6 +13,7 @@ from ..database import SessionLocal
 from .deps import get_current_user
 from ..security import has_perm, require_pin
 from ..ws import manager
+from ..node_auth import require_node
 
 router = APIRouter()
 
@@ -373,9 +374,11 @@ def get_state(current_user: dict = Depends(get_current_user)):
     }
 
 @router.post("/telemetry/node")
-def receive_node_telemetry(payload: NodeTelemetryPayload):
+def receive_node_telemetry(payload: NodeTelemetryPayload, auth_node: str = Depends(require_node)):
     """Receives periodic real-time hardware telemetry from Jetson CV nodes."""
-    node_id = payload.node_id or "Jetson-PTZ_1"
+    node_id = payload.node_id or auth_node
+    if node_id != auth_node:
+        raise HTTPException(status_code=403, detail="Node credentials do not match node_id")
     node_data = {
         "node_id": node_id,
         "name": payload.name or f"Jetson Node ({node_id})",
