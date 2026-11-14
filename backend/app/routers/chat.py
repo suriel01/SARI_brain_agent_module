@@ -131,7 +131,7 @@ async def chat_endpoint(req: schemas.ChatRequest, db: Session = Depends(get_db),
         elif result.get("status") != "success":
             resp_content = _failure_reply(result, lang)
         else:
-            resp_content = "🔒 Acknowledged. All perimeter gates and access points have been locked successfully." if lang == "en" else "🔒 Entendido. Todos los accesos perimetrales han sido bloqueados con éxito."
+            resp_content = "🔒 Acknowledged. Perimeter gates marked as locked (simulated: no gate hardware is connected)." if lang == "en" else "🔒 Entendido. Accesos perimetrales marcados como bloqueados (simulado: no hay hardware de portones conectado)."
         msg_db = crud.add_message(db, thread_id, role="agent", content=resp_content)
         return msg_db
 
@@ -141,11 +141,8 @@ async def chat_endpoint(req: schemas.ChatRequest, db: Session = Depends(get_db),
         "ver camara", "ver cámara", "camera snapshot", "view camera", "take snapshot"
     ]):
         now_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        snapshot_url = "http://localhost:7000/api/hardware/snapshot/jetson-cv1"
         if lang == "en":
             resp_content = f"""📸 **REAL-TIME TACTICAL VISION SNAPSHOT**
-
-![Camera Snapshot]({snapshot_url})
 
 | Parameter | Tactical Value |
 | :--- | :--- |
@@ -157,8 +154,6 @@ async def chat_endpoint(req: schemas.ChatRequest, db: Session = Depends(get_db),
 """
         else:
             resp_content = f"""📸 **CAPTURA TÁCTICA DE VISIÓN EN TIEMPO REAL**
-
-![Camera Snapshot]({snapshot_url})
 
 | Parámetro | Valor Táctico |
 | :--- | :--- |

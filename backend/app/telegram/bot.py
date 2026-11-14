@@ -49,6 +49,16 @@ def telegram_actor(chat_id: Any) -> Actor:
     return Actor(name=f"telegram:{cid}", channel="telegram", can_control_hardware=bool(cid) and is_chat_allowed(cid))
 
 
+def _act(tool: str, args: dict, chat_id: Any, success_reply: str) -> str:
+    """Runs a physical action for a Telegram chat; only claims success when the hardware confirmed it."""
+    result = execute_physical_tool(tool, args, actor=telegram_actor(chat_id))
+    if result.get("status") == "success":
+        return success_reply
+    if result.get("status") == "denied":
+        return "⛔ Acción física denegada para este chat."
+    return f"⚠️ *La acción física no pudo completarse*: {result.get('message', '')}"
+
+
 SILENCE_PIN_PROMPT = (
     "⚠️ *PIN inválido o ausente.*\nPara silenciar la sirena física, ingresa el PIN de seguridad:\n`/silenciar <PIN>`"
 )
@@ -66,8 +76,7 @@ def handle_telegram_callback(cb_data: str, chat_id: Any) -> Optional[str]:
         return None
 
     if cb_data in ["btn_siren_activate", "btn_siren"]:
-        execute_physical_tool("activate_siren", {"duration_seconds": 30}, actor=telegram_actor(cid))
-        return "🚨 *SIRENA ACTIVADA* vía botón de emergencia."
+        return _act("activate_siren", {"duration_seconds": 30}, cid, "🚨 *SIRENA ACTIVADA* vía botón de emergencia.")
     if cb_data in ["btn_siren_silence", "btn_silence"]:
         return "🔐 Para silenciar la sirena envía el PIN de seguridad:\n`/silenciar <PIN>`"
     if cb_data in ["btn_gates_lock", "btn_gates"]:
@@ -190,8 +199,7 @@ def handle_telegram_command(text: str, from_chat_id: Any) -> str:
         if ok is None:
             return PIN_LOCKED_MSG
         if ok:
-            execute_physical_tool("activate_siren", {"duration_seconds": 30}, actor=telegram_actor(chat_id_str))
-            return "🚨 *SIRENA TÁCTICA ACTIVADA* por 30 segundos mediante orden de Telegram."
+            return _act("activate_siren", {"duration_seconds": 30}, chat_id_str, "🚨 *SIRENA TÁCTICA ACTIVADA* por 30 segundos mediante orden de Telegram.")
         else:
             return "⚠️ *PIN inválido o ausente.*\nPara activar la sirena física, ingresa el PIN de seguridad:\n`/sirena <PIN>`"
 
@@ -202,8 +210,7 @@ def handle_telegram_command(text: str, from_chat_id: Any) -> str:
             return PIN_LOCKED_MSG
         if not ok:
             return SILENCE_PIN_PROMPT
-        execute_physical_tool("deactivate_siren", {}, actor=telegram_actor(chat_id_str))
-        return "🔊 *Sirena táctica silenciada* y apagada correctamente."
+        return _act("deactivate_siren", {}, chat_id_str, "🔊 *Sirena táctica silenciada* y apagada correctamente.")
 
     if cmd == "/portones":
         parts = text.split()
@@ -213,11 +220,9 @@ def handle_telegram_command(text: str, from_chat_id: Any) -> str:
             return PIN_LOCKED_MSG
         if ok:
             if HardwareState.gates_locked:
-                execute_physical_tool("unlock_gates", {}, actor=telegram_actor(chat_id_str))
-                return "🔓 *Accesos perimetrales desbloqueados* por orden de Telegram."
+                return _act("unlock_gates", {}, chat_id_str, "🔓 *Accesos perimetrales desbloqueados* por orden de Telegram (simulado: sin hardware de portones).")
             else:
-                execute_physical_tool("lock_gates", {}, actor=telegram_actor(chat_id_str))
-                return "🔒 *Accesos perimetrales bloqueados* de emergencia por orden de Telegram."
+                return _act("lock_gates", {}, chat_id_str, "🔒 *Accesos perimetrales bloqueados* de emergencia por orden de Telegram (simulado: sin hardware de portones).")
         else:
             return "⚠️ *PIN inválido o ausente.*\nUso: `/portones <PIN>`"
 
@@ -352,8 +357,7 @@ def process_natural_language_query(query: str, chat_id: str) -> str:
             if ok is None:
                 reply = PIN_LOCKED_MSG
             elif ok:
-                execute_physical_tool("activate_siren", {"duration_seconds": 30}, actor=telegram_actor(chat_id))
-                reply = "🚨 Entendido. Sirena táctica perimetral activada por 30 segundos."
+                reply = _act("activate_siren", {"duration_seconds": 30}, chat_id, "🚨 Entendido. Sirena táctica perimetral activada por 30 segundos.")
             else:
                 reply = "⚠️ Para activar la sirena física por seguridad debes incluir tu PIN (ej: 'activa la sirena <PIN>' o `/sirena <PIN>`)."
             crud.add_message(db, thread.id, role="agent", content=reply)
@@ -364,8 +368,7 @@ def process_natural_language_query(query: str, chat_id: str) -> str:
             if ok is None:
                 reply = PIN_LOCKED_MSG
             elif ok:
-                execute_physical_tool("deactivate_siren", {}, actor=telegram_actor(chat_id))
-                reply = "🔊 Sirena táctica apagada y silenciada."
+                reply = _act("deactivate_siren", {}, chat_id, "🔊 Sirena táctica apagada y silenciada.")
             else:
                 reply = "⚠️ Para silenciar la sirena física por seguridad debes incluir tu PIN (ej: 'apaga la sirena <PIN>' o `/silenciar <PIN>`)."
             crud.add_message(db, thread.id, role="agent", content=reply)

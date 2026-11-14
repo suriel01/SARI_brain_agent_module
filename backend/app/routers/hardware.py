@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import requests
@@ -311,6 +311,33 @@ def record_physical_action(actor: Optional[Actor], tool_name: str, result: str, 
         db.close()
 
 
+def _call_siren_service(path: str, payload: Optional[dict]) -> tuple:
+    """Calls the siren microservice. Returns (ok, reason); ok only on a 2xx answer."""
+    try:
+        kwargs = {"headers": _siren_headers(), "timeout": 2.0}
+        if payload is not None:
+            kwargs["json"] = payload
+        res = requests.post(f"{SIRENA_SERVICE_URL}{path}", **kwargs)
+    except Exception as exc:
+        logger.error("Siren service unreachable on %s: %s", path, exc)
+        return False, "siren service unreachable"
+    status = getattr(res, "status_code", None)
+    if not isinstance(status, int) or not 200 <= status < 300:
+        logger.error("Siren service answered %s on %s", status, path)
+        return False, f"siren service answered HTTP {status}"
+    return True, ""
+
+
+def _broadcast(payload: dict) -> None:
+    """Best-effort WebSocket notification; only called after the hardware confirmed the action."""
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.create_task(manager.broadcast_json(payload))
+    except Exception:
+        pass
+
+
 def execute_physical_tool(tool_name: str, args: dict = None, *, actor: Actor):
     """Single choke point for physical actions: checks the actor's permission and audits every call."""
     result = _execute_physical_tool(tool_name, args or {}, actor=actor)
@@ -329,53 +356,37 @@ def _execute_physical_tool(tool_name: str, args: dict, *, actor: Actor):
     duration = args.get("duration_seconds") or args.get("duracion_segundos", 30)
 
     if tool_name in ACTIVATE_SIREN:
+        ok, reason = _call_siren_service("/api/alarma/activar", {"duracion": duration})
+        if not ok:
+            HardwareState.add_log(f"❌ Siren activation FAILED: {reason}", level="ERROR", camera_module="HARDWARE_CTRL")
+            return {"status": "failed", "message": f"❌ Siren activation failed: {reason}."}
         HardwareState.siren_active = True
         HardwareState.alert_count += 1
         HardwareState.last_alert_time = time.time()
         HardwareState.add_log(f"🚨 Physical Siren activated for {duration}s", level="ERROR", camera_module="HARDWARE_CTRL")
-        
-        try:
-            requests.post(f"{SIRENA_SERVICE_URL}/api/alarma/activar", json={"duracion": duration}, headers=_siren_headers(), timeout=2.0)
-        except Exception as e:
-            print(f"Warning contacting physical siren service: {e}")
-        
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.create_task(manager.broadcast_json({"event": "siren_activated"}))
-        except Exception:
-            pass
-
+        _broadcast({"event": "siren_activated"})
         return {"status": "success", "message": "🚨 Siren activated."}
 
     elif tool_name in DEACTIVATE_SIREN:
+        ok, reason = _call_siren_service("/api/alarma/desactivar", None)
+        if not ok:
+            HardwareState.add_log(f"❌ Siren deactivation FAILED: {reason}", level="ERROR", camera_module="HARDWARE_CTRL")
+            return {"status": "failed", "message": f"❌ Siren deactivation failed: {reason}. The siren may still be sounding."}
         HardwareState.siren_active = False
         HardwareState.add_log("🔊 Siren deactivated / silenced by operator", level="INFO", camera_module="HARDWARE_CTRL")
-        
-        try:
-            requests.post(f"{SIRENA_SERVICE_URL}/api/alarma/desactivar", headers=_siren_headers(), timeout=2.0)
-        except Exception as e:
-            print(f"Warning contacting physical siren service: {e}")
-
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.create_task(manager.broadcast_json({"event": "siren_deactivated"}))
-        except Exception:
-            pass
-
+        _broadcast({"event": "siren_deactivated"})
         return {"status": "success", "message": "🔊 Siren turned off & silenced."}
 
     elif tool_name in LOCK_GATES:
         HardwareState.gates_locked = True
-        HardwareState.add_log("🔒 Perimeter gates locked", level="WARN", camera_module="HARDWARE_CTRL")
-        return {"status": "success", "message": "🔒 Perimeter gates locked."}
+        HardwareState.add_log("🔒 Perimeter gates locked (simulated: no gate hardware connected)", level="WARN", camera_module="HARDWARE_CTRL")
+        return {"status": "success", "simulated": True, "message": "🔒 Perimeter gates locked (simulated: no gate hardware connected)."}
 
     elif tool_name in UNLOCK_GATES:
         HardwareState.gates_locked = False
-        HardwareState.add_log("🔓 Perimeter gates unlocked", level="INFO", camera_module="HARDWARE_CTRL")
-        return {"status": "success", "message": "🔓 Perimeter gates unlocked."}
-    
+        HardwareState.add_log("🔓 Perimeter gates unlocked (simulated: no gate hardware connected)", level="INFO", camera_module="HARDWARE_CTRL")
+        return {"status": "success", "simulated": True, "message": "🔓 Perimeter gates unlocked (simulated: no gate hardware connected)."}
+
     return {"status": "error", "message": f"Unknown hardware tool: {tool_name}"}
 
 @router.get("/state")
@@ -416,6 +427,7 @@ def get_state(current_user: dict = Depends(get_current_user)):
     return {
         "siren_active": HardwareState.siren_active,
         "gates_locked": HardwareState.gates_locked,
+        "gates_simulated": True,
         "alert_count": HardwareState.alert_count,
         "last_alert_thread_id": HardwareState.last_alert_thread_id,
         "logs": HardwareState.logs,
@@ -456,17 +468,24 @@ def manual_action(req: dict, current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
     require_pin(req.get("pin"), key=f"user:{current_user.get('id')}")
 
-    if action in ["toggle_sirena", "toggle_siren", "activar_sirena", "activate_siren", "desactivar_sirena", "deactivate_siren"]:
+    if action in ACTIVATE_SIREN:
+        return execute_physical_tool("activate_siren", {"duration_seconds": 30}, actor=actor)
+    if action in DEACTIVATE_SIREN:
+        return execute_physical_tool("deactivate_siren", {}, actor=actor)
+    if action in LOCK_GATES:
+        return execute_physical_tool("lock_gates", {}, actor=actor)
+    if action in UNLOCK_GATES:
+        return execute_physical_tool("unlock_gates", {}, actor=actor)
+
+    # Legacy toggles (sent by HardwarePanel/Dashboard): flip the current state.
+    if action in ("toggle_sirena", "toggle_siren"):
         if HardwareState.siren_active:
             return execute_physical_tool("deactivate_siren", {}, actor=actor)
-        else:
-            return execute_physical_tool("activate_siren", {"duration_seconds": 30}, actor=actor)
-            
-    elif action in ["toggle_accesos", "toggle_gates", "cerrar_accesos", "lock_gates", "abrir_accesos", "unlock_gates"]:
+        return execute_physical_tool("activate_siren", {"duration_seconds": 30}, actor=actor)
+    if action in ("toggle_accesos", "toggle_gates"):
         if HardwareState.gates_locked:
             return execute_physical_tool("unlock_gates", {}, actor=actor)
-        else:
-            return execute_physical_tool("lock_gates", {}, actor=actor)
+        return execute_physical_tool("lock_gates", {}, actor=actor)
     
     raise HTTPException(status_code=400, detail=f"Unknown hardware action: {action}")
 
@@ -499,42 +518,3 @@ def list_physical_action_audit(limit: int = 100, current_user: dict = Depends(re
         ]
     finally:
         db.close()
-
-
-@router.get("/snapshot/{cam_id}")
-def get_camera_snapshot(cam_id: str):
-    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    svg_content = f"""<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360" style="background:#0d1117; font-family: monospace;">
-  <!-- Camera Feed Background Grid -->
-  <rect width="640" height="360" fill="#0b0e14" />
-  <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-    <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="1"/>
-  </pattern>
-  <rect width="640" height="360" fill="url(#grid)" />
-
-  <!-- Camera HUD Corners -->
-  <path d="M 20 40 L 20 20 L 40 20" fill="none" stroke="#ff3366" stroke-width="2" />
-  <path d="M 620 40 L 620 20 L 600 20" fill="none" stroke="#ff3366" stroke-width="2" />
-  <path d="M 20 320 L 20 340 L 40 340" fill="none" stroke="#ff3366" stroke-width="2" />
-  <path d="M 620 320 L 620 340 L 600 340" fill="none" stroke="#ff3366" stroke-width="2" />
-
-  <!-- Simulated Object Detection Box -->
-  <rect x="220" y="110" width="200" height="160" fill="rgba(255, 51, 102, 0.15)" stroke="#ff3366" stroke-width="2" stroke-dasharray="4 2"/>
-  <rect x="220" y="90" width="130" height="20" fill="#ff3366" />
-  <text x="225" y="104" fill="#ffffff" font-size="11" font-weight="bold">PERSON (96.4%)</text>
-
-  <!-- Crosshair -->
-  <line x1="320" y1="180" x2="320" y2="200" stroke="rgba(255, 51, 102, 0.8)" stroke-width="1"/>
-  <line x1="310" y1="190" x2="330" y2="190" stroke="rgba(255, 51, 102, 0.8)" stroke-width="1"/>
-
-  <!-- HUD Overlay Text -->
-  <text x="30" y="45" fill="#ff3366" font-size="14" font-weight="bold">● REC [LIVE FEED]</text>
-  <text x="30" y="65" fill="#8b949e" font-size="12">CAM: {cam_id.upper()} (JETSON CV NODE)</text>
-  <text x="440" y="45" fill="#8b949e" font-size="12">{now_str}</text>
-  <text x="440" y="65" fill="#00ffcc" font-size="12">STATUS: MONITORING OK</text>
-
-  <!-- Bottom Banner -->
-  <rect x="0" y="330" width="640" height="30" fill="rgba(0,0,0,0.7)" />
-  <text x="20" y="350" fill="#c9d1d9" font-size="11">SARI SOC TACTICAL PERCEPTION NODE • IP: 192.168.1.73</text>
-</svg>"""
-    return Response(content=svg_content, media_type="image/svg+xml")
