@@ -7,7 +7,10 @@ SARI (Sistema Autónomo de Respuesta a Intrusiones) is a **physical security sys
 - `sari-ui/` — React + TypeScript + Vite SOC dashboard, port 5173.
 - `sirena_service.py` — siren microservice, port 5000 (internal).
 - `mosquitto/` — MQTT broker config. `passwd` is generated locally, never committed:
-  `docker run --rm -v "$PWD/mosquitto/config:/m" eclipse-mosquitto:2.0 mosquitto_passwd -c -b /m/passwd <user> <password>`
+  `docker run --rm -v "$PWD/mosquitto/config:/m" eclipse-mosquitto:2.0 mosquitto_passwd -b /m/passwd <user> <password>`
+  - `mosquitto/config/acl` (committed): the brain logs in as `sari_brain` (reads `sari/#`, writes `sari/nodes/+/ptz|tracking|config`); each vision node logs in with its node id as username and may only write `sari/nodes/<id>/telemetry|status|alerts` and read `sari/nodes/<id>/ptz|tracking|config`. `sari_operator` is a transitional account for the deployed Jetson (`Jetson-PTZ_1` + legacy `sari/alerts`), to be removed by E1.
+  - MQTT alerts: `sari/nodes/<id>/alerts` binds the siren actor to `<id>` from the topic (the ACL proves it). Legacy `sari/alerts` (actor taken from the payload, unverifiable) is accepted only while `SARI_MQTT_LEGACY_ALERTS=true` (default during the transition).
+  - TLS (8883): `scripts/gen-mqtt-certs.sh <broker-host-or-ip> [...]` writes a local CA and server cert to `mosquitto/certs/` (gitignored), then `mv mosquitto/config/conf.d/tls.conf.example mosquitto/config/conf.d/tls.conf` and restart `sari-mqtt`. Nodes get only `ca.crt`. Plain 1883 stays open until every node uses TLS.
 - PostgreSQL 15 + pgvector.
 
 ## Required environment (`.env`, never committed)
@@ -21,6 +24,7 @@ The backend fails closed without these (`backend/app/config.py`):
 - `SARI_ADMIN_PASSWORD` — only needed when no `admin` user exists yet
 - `SARI_NODE_KEYS` — `node_id:key,...`; vision nodes send `X-SARI-Node-Key`. Empty means every node request is rejected
 - `SARI_ALLOWED_STREAM_HOSTS` — optional, comma list of exact LAN hostnames allowed as node `ip`/`stream_url`; otherwise only RFC1918 IPv4 literals are accepted (`backend/app/netpolicy.py`)
+- `SARI_MQTT_LEGACY_ALERTS` — optional, default `true`; set `false` once every node publishes alerts on `sari/nodes/<id>/alerts`
 - `SARI_MCP_HARDWARE_ENABLED` — optional, `true` lets the local MCP server (`backend/app/sari_mcp_server.py`) drive hardware; default off
 
 ## Commands

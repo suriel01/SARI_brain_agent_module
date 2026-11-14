@@ -3,7 +3,7 @@ import time
 import logging
 import threading
 import paho.mqtt.client as mqtt
-from .handlers import handle_telemetry_message, handle_status_message, handle_alert_message
+from .handlers import LEGACY_ALERT_TOPIC, route_message
 
 logger = logging.getLogger("sari_mqtt")
 
@@ -17,16 +17,24 @@ BROKER_PASS = _settings.mqtt_password
 
 _mqtt_client = None
 
+
+def subscriptions(legacy_alerts: bool) -> list:
+    """Topics the brain listens to. Per-node alert topics are authenticated by the broker ACL."""
+    topics = [
+        ("sari/nodes/+/telemetry", 0),
+        ("sari/nodes/+/status", 1),
+        ("sari/nodes/+/alerts", 1),
+    ]
+    if legacy_alerts:
+        topics.append((LEGACY_ALERT_TOPIC, 1))
+    return topics
+
 def _on_connect(client, userdata, flags, rc, properties=None):
     if rc == 0:
         logger.info(f"[MQTT] Connected successfully to broker at {BROKER_HOST}:{BROKER_PORT}")
-        # Subscribe to topics
-        client.subscribe([
-            ("sari/nodes/+/telemetry", 0),
-            ("sari/nodes/+/status", 1),
-            ("sari/alerts", 1)
-        ])
-        logger.info("[MQTT] Subscribed to sari/nodes/+/telemetry, sari/nodes/+/status, sari/alerts")
+        topics = subscriptions(_settings.mqtt_legacy_alerts)
+        client.subscribe(topics)
+        logger.info("[MQTT] Subscribed to %s", ", ".join(t for t, _ in topics))
     else:
         logger.error(f"[MQTT] Failed to connect to broker, return code: {rc}")
 
@@ -40,20 +48,18 @@ def _on_message(client, userdata, msg):
     except Exception:
         payload_str = str(msg.payload)
 
-    if "/telemetry" in topic:
-        handle_telemetry_message(topic, payload_str)
-    elif "/status" in topic:
-        handle_status_message(topic, payload_str)
-    elif topic == "sari/alerts":
-        handle_alert_message(payload_str)
-    else:
-        logger.info(f"[MQTT] Message received on unhandled topic: {topic}")
+    route_message(topic, payload_str, legacy_alerts=_settings.mqtt_legacy_alerts)
 
 def start_mqtt_client():
     """Starts the background MQTT listener thread."""
     global _mqtt_client
     if _mqtt_client is not None:
         return _mqtt_client
+
+    if _settings.mqtt_legacy_alerts:
+        logger.warning(
+            "[MQTT] SARI_MQTT_LEGACY_ALERTS is on: alerts on %s are accepted without proof of which node sent them. "
+            "Disable it once every node publishes to sari/nodes/<node>/alerts.", LEGACY_ALERT_TOPIC)
 
     try:
         client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="sari_brain_consumer")

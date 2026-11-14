@@ -39,6 +39,7 @@ services:
       - MQTT_BROKER_PORT=1883
       - MQTT_USER=${MQTT_USER:?set MQTT_USER in .env}
       - MQTT_PASSWORD=${MQTT_PASSWORD:?set MQTT_PASSWORD in .env}
+      - SARI_MQTT_LEGACY_ALERTS=${SARI_MQTT_LEGACY_ALERTS:-true}
       - TZ=America/Mexico_City
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_ALLOWED_CHAT_IDS=${TELEGRAM_ALLOWED_CHAT_IDS:-}
@@ -54,9 +55,11 @@ services:
     image: eclipse-mosquitto:2.0
     container_name: sari-mqtt
     ports:
-      - "1883:1883"
+      - "1883:1883"  # plain MQTT, kept during the TLS transition
+      - "8883:8883"  # MQTT over TLS, active once conf.d/tls.conf exists
     volumes:
       - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/certs:/mosquitto/certs
       - ./mosquitto/data:/mosquitto/data
       - ./mosquitto/log:/mosquitto/log
     restart: unless-stopped

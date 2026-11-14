@@ -34,6 +34,10 @@ mosquitto/log/
 
 # Broker credentials (generate locally with mosquitto_passwd)
 mosquitto/config/passwd
+# Local TLS material (scripts/gen-mqtt-certs.sh) and locally enabled listeners
+mosquitto/certs/*
+!mosquitto/certs/.gitkeep
+mosquitto/config/conf.d/*.conf
 
 # Upstream checkout, not used by the build (pip installs nemoguardrails)
 NeMo-Guardrails/

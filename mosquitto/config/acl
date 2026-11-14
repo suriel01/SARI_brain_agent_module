@@ -1,0 +1,29 @@
+# SARI Mosquitto ACL (no secrets; users and passwords live in the local passwd file).
+# Anything not granted here is denied. %u is the authenticated MQTT username, so a vision
+# node must log in with its node id as username (e.g. user "Jetson-PTZ_2" for node Jetson-PTZ_2).
+
+# --- Vision nodes: publish only under their own id, read only their own command topics ---
+pattern write sari/nodes/%u/telemetry
+pattern write sari/nodes/%u/status
+pattern write sari/nodes/%u/alerts
+pattern read sari/nodes/%u/ptz
+pattern read sari/nodes/%u/tracking
+pattern read sari/nodes/%u/config
+
+# --- Brain (the backend's MQTT_USER must be sari_brain) ---
+user sari_brain
+topic read sari/#
+topic write sari/nodes/+/ptz
+topic write sari/nodes/+/tracking
+topic write sari/nodes/+/config
+
+# --- Transitional shared account used by the deployed Jetson (node Jetson-PTZ_1) ---
+# TODO(E1): remove after Eyes migrates to a per-node user and sari/nodes/<node>/alerts.
+user sari_operator
+topic write sari/alerts
+topic write sari/nodes/Jetson-PTZ_1/telemetry
+topic write sari/nodes/Jetson-PTZ_1/status
+topic write sari/nodes/Jetson-PTZ_1/alerts
+topic read sari/nodes/Jetson-PTZ_1/ptz
+topic read sari/nodes/Jetson-PTZ_1/tracking
+topic read sari/nodes/Jetson-PTZ_1/config

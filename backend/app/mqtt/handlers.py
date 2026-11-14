@@ -1,7 +1,9 @@
 import json
 import logging
 import time
+from typing import Optional
 
+from ..config import get_settings
 from ..database import SessionLocal
 from ..routers.hardware import HardwareState
 from ..services.alert_ingest import ingest_alert, normalize_snapshot
@@ -71,18 +73,62 @@ def handle_status_message(topic: str, payload_str: str):
     except Exception as e:
         logger.error(f"[MQTT] Error handling status/LWT: {e}")
 
-def handle_alert_message(payload_str: str):
-    """Handles critical intrusion alerts from sari/alerts with Base64 snapshot.
+LEGACY_ALERT_TOPIC = "sari/alerts"
 
-    The siren actor is the node named in the payload; broker-level node authentication is T11.
+
+def node_id_from_topic(topic: str, kind: str) -> Optional[str]:
+    """Returns the node id of ``sari/nodes/<id>/<kind>`` or None when the topic has another shape."""
+    parts = topic.split("/")
+    if len(parts) != 4 or parts[0] != "sari" or parts[1] != "nodes" or parts[3] != kind:
+        return None
+    node_id = parts[2]
+    if not node_id or node_id in {"+", "#"}:
+        return None
+    return node_id
+
+
+def route_message(topic: str, payload_str: str, legacy_alerts: Optional[bool] = None) -> None:
+    """Single MQTT entry point.
+
+    Alerts on ``sari/nodes/<id>/alerts`` are bound to ``<id>``: the broker ACL only lets user ``<id>``
+    publish there, so the topic (not the payload) identifies the node. The shared ``sari/alerts``
+    topic is accepted only while ``SARI_MQTT_LEGACY_ALERTS`` is on.
+    """
+    if legacy_alerts is None:
+        legacy_alerts = get_settings().mqtt_legacy_alerts
+
+    alert_node = node_id_from_topic(topic, "alerts")
+    if alert_node is not None:
+        handle_alert_message(payload_str, node_id=alert_node)
+    elif topic == LEGACY_ALERT_TOPIC:
+        if legacy_alerts:
+            handle_alert_message(payload_str)
+        else:
+            logger.warning("[MQTT] Ignored alert on legacy topic %s (SARI_MQTT_LEGACY_ALERTS is off)", topic)
+    elif topic.endswith("/alerts"):
+        logger.warning("[MQTT] Ignored alert on malformed topic %s", topic)
+    elif "/telemetry" in topic:
+        handle_telemetry_message(topic, payload_str)
+    elif "/status" in topic:
+        handle_status_message(topic, payload_str)
+    else:
+        logger.info(f"[MQTT] Message received on unhandled topic: {topic}")
+
+
+def handle_alert_message(payload_str: str, node_id: Optional[str] = None):
+    """Handles intrusion alerts (Base64 snapshot included).
+
+    ``node_id`` comes from the per-node topic and is the siren actor. Without it (legacy
+    ``sari/alerts``) the actor is the node named in the payload, which the broker cannot verify.
     """
     db = SessionLocal()
     try:
         data = json.loads(payload_str)
+        claimed = data.get("camara_id") or data.get("module_name")
         result = ingest_alert(
             db,
-            node_id=data.get("camara_id") or data.get("module_name") or "Jetson-PTZ_1",
-            module=data.get("camara_id") or data.get("module_name") or "Jetson-PTZ_1",
+            node_id=node_id or claimed or "Jetson-PTZ_1",
+            module=claimed or node_id or "Jetson-PTZ_1",
             event_type=data.get("event_type", "intrusion"),
             severity=data.get("severity", "high"),
             message=data.get("message", "Intrusión detectada"),

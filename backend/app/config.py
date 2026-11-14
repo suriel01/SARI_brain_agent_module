@@ -21,6 +21,7 @@ class Settings:
     mqtt_user: str
     mqtt_password: str
     siren_token: str
+    mqtt_legacy_alerts: bool = True
 
 
 def _required(name: str) -> str:
@@ -30,6 +31,13 @@ def _required(name: str) -> str:
     if value in KNOWN_INSECURE_VALUES:
         raise ConfigError(f"Setting {name} uses a known insecure default value")
     return value
+
+
+def _flag(name: str, default: bool) -> bool:
+    value = os.environ.get(name, "").strip().lower()
+    if not value:
+        return default
+    return value in {"1", "true", "yes", "on"}
 
 
 def load_settings() -> Settings:
@@ -50,6 +58,8 @@ def load_settings() -> Settings:
         mqtt_user=_required("MQTT_USER"),
         mqtt_password=_required("MQTT_PASSWORD"),
         siren_token=_required("SARI_SIREN_TOKEN"),
+        # Transitional: the shared `sari/alerts` topic cannot prove which node sent an alert.
+        mqtt_legacy_alerts=_flag("SARI_MQTT_LEGACY_ALERTS", default=True),
     )
 
 
