@@ -16,6 +16,7 @@ The backend fails closed without these (`backend/app/config.py`):
 - `SARI_SECURITY_PIN` — 4+ digits, not `1234`
 - `MQTT_USER`, `MQTT_PASSWORD` — must match `mosquitto/config/passwd`
 - `POSTGRES_PASSWORD` — on an existing volume the DB keeps its old password; change it with `ALTER USER sari_user PASSWORD '...'` first
+- `SARI_SIREN_TOKEN` — shared secret between backend and siren service
 - `SARI_ADMIN_PASSWORD` — only needed when no `admin` user exists yet
 
 ## Commands

@@ -20,6 +20,7 @@ class Settings:
     mqtt_port: int
     mqtt_user: str
     mqtt_password: str
+    siren_token: str
 
 
 def _required(name: str) -> str:
@@ -48,6 +49,7 @@ def load_settings() -> Settings:
         mqtt_port=int(os.environ.get("MQTT_BROKER_PORT", "1883")),
         mqtt_user=_required("MQTT_USER"),
         mqtt_password=_required("MQTT_PASSWORD"),
+        siren_token=_required("SARI_SIREN_TOKEN"),
     )
 
 

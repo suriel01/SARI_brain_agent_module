@@ -16,6 +16,12 @@ from ..ws import manager
 router = APIRouter()
 
 SIRENA_SERVICE_URL = os.environ.get("SIRENA_SERVICE_URL", "http://localhost:5000")
+
+
+def _siren_headers() -> dict:
+    from ..config import get_settings
+
+    return {"X-SARI-Siren-Token": get_settings().siren_token}
 boot_time = datetime.datetime.now()
 
 class NodeTelemetryPayload(BaseModel):
@@ -237,7 +243,7 @@ def execute_physical_tool(tool_name: str, args: dict = None):
         HardwareState.add_log(f"🚨 Physical Siren activated for {duration}s", level="ERROR", camera_module="HARDWARE_CTRL")
         
         try:
-            requests.post(f"{SIRENA_SERVICE_URL}/api/alarma/activar", json={"duracion": duration}, timeout=2.0)
+            requests.post(f"{SIRENA_SERVICE_URL}/api/alarma/activar", json={"duracion": duration}, headers=_siren_headers(), timeout=2.0)
         except Exception as e:
             print(f"Warning contacting physical siren service: {e}")
         
@@ -255,7 +261,7 @@ def execute_physical_tool(tool_name: str, args: dict = None):
         HardwareState.add_log("🔊 Siren deactivated / silenced by operator", level="INFO", camera_module="HARDWARE_CTRL")
         
         try:
-            requests.post(f"{SIRENA_SERVICE_URL}/api/alarma/desactivar", timeout=2.0)
+            requests.post(f"{SIRENA_SERVICE_URL}/api/alarma/desactivar", headers=_siren_headers(), timeout=2.0)
         except Exception as e:
             print(f"Warning contacting physical siren service: {e}")
 

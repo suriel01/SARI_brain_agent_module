@@ -7,6 +7,7 @@ VALID = {
     "SARI_SECURITY_PIN": "8642",
     "MQTT_USER": "brain",
     "MQTT_PASSWORD": "a-strong-broker-password",
+    "SARI_SIREN_TOKEN": "a-strong-siren-token",
 }
 
 
