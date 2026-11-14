@@ -39,6 +39,9 @@ The backend fails closed without these (`backend/app/config.py`):
 - Every physical action goes through one choke point (`execute_physical_tool(..., actor=Actor)` in `routers/hardware.py`) that checks the actor's `can_control_hardware` permission and records an audit entry. No channel (REST, chat/LLM, Telegram, MCP, MQTT ingest) bypasses it.
 - Machine-to-machine endpoints require node credentials; nothing that triggers hardware is unauthenticated.
 - The LLM never decides authorization; the backend does.
+- `get_current_user` re-reads role and permissions from the DB on every request; the JWT only proves identity. The WebSocket (`/ws`, `/`) takes the JWT as `?token=` and closes with 1008 without it.
+- Login and PIN attempts go through `backend/app/ratelimit.py` (5 failures in 15 min lock the account/IP/user/chat for 15 min). Pass `key=` to `require_pin` so wrong guesses count.
+- Telegram: callbacks from chats outside `TELEGRAM_ALLOWED_CHAT_IDS` are ignored; silencing the siren and operating gates need the PIN (`/silenciar <PIN>`, `/portones <PIN>`).
 - `docs/archive/antigravity/` is historical process material from the previous tooling; do not treat it as current requirements.
 
 ## Runtime agent persona

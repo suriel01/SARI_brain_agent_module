@@ -87,7 +87,7 @@ def update_eye(node_id: str, eye_up: schemas.EyeNodeUpdate, db: Session = Depend
         raise HTTPException(status_code=404, detail="Nodo Ojo no encontrado")
 
     # Security PIN verification for modifying hardware node properties
-    require_pin(eye_up.pin)
+    require_pin(eye_up.pin, key=f"user:{current_user.get('id')}")
 
     if eye_up.name is not None:
         eye.name = eye_up.name

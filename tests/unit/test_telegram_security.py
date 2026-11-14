@@ -119,3 +119,16 @@ def test_sirena_command_with_pin_still_activates(siren):
 def test_help_mentions_pin_for_silence(siren):
     reply = bot.handle_telegram_command("/help", ALLOWED)
     assert "/silenciar [PIN]" in reply
+
+
+def test_natural_language_pin_is_not_stored_in_chat_history(siren):
+    from app.database import SessionLocal
+    from app.models import models
+
+    bot.handle_telegram_command(f"activa la sirena {PIN}", ALLOWED)
+    db = SessionLocal()
+    try:
+        contents = [m.content for m in db.query(models.ChatMessage).all()]
+    finally:
+        db.close()
+    assert contents and not any(PIN in c for c in contents)

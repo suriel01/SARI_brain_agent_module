@@ -155,14 +155,14 @@ app.include_router(hardware.router, prefix="/api", tags=["hardware"])
 
 from .ws import manager
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
-from .routers.deps import decode_token
+from .routers.deps import authenticate_token
 
 @app.websocket("/ws")
 @app.websocket("/")
 async def websocket_endpoint(websocket: WebSocket):
     # Browsers cannot set headers on a WebSocket handshake, so the JWT comes as ?token=.
     try:
-        decode_token(websocket.query_params.get("token", ""))
+        authenticate_token(websocket.query_params.get("token", ""))
     except HTTPException:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return

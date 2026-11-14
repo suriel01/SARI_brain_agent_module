@@ -40,6 +40,9 @@ def clean_state(app, monkeypatch):
     hardware.HardwareState.siren_active = False
     hardware.HardwareState.gates_locked = False
     hardware.HardwareState.alert_count = 0
+    from app import ratelimit
+
+    ratelimit.reset_all()
     yield
 
 
