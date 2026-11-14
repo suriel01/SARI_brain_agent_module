@@ -5,7 +5,7 @@ from typing import Optional
 
 from ..config import get_settings
 from ..database import SessionLocal
-from ..routers.hardware import HardwareState
+from ..routers.hardware import NODE_TELEMETRY_FIELDS, HardwareState
 from ..services.alert_ingest import ingest_alert, normalize_snapshot
 from ..telegram.watchdog import reset_node_connection_state, trigger_node_disconnection_alert
 
@@ -21,14 +21,8 @@ def handle_telemetry_message(topic: str, payload_str: str):
         HardwareState.nodes[node_id] = {
             "node_id": node_id,
             "name": data.get("name", f"Jetson Node ({node_id})"),
-            "ip": data.get("ip", "192.168.1.73"),
-            "ram_used_gb": data.get("ram_used_gb", 3.8),
-            "ram_total_gb": data.get("ram_total_gb", 7.44),
-            "cpu_load_pct": data.get("cpu_load_pct", 30.0),
-            "gpu_load_pct": data.get("gpu_load_pct", 50.0),
-            "temp_c": data.get("temp_c", 50.0),
-            "fps": data.get("fps", 30.0),
-            "link_status": data.get("link_status", "Wi-Fi (1Gbps)"),
+            "ip": data.get("ip"),
+            **{field: data.get(field) for field in NODE_TELEMETRY_FIELDS},
             "last_seen": time.time(),
             "is_online": True
         }
@@ -55,7 +49,7 @@ def handle_status_message(topic: str, payload_str: str):
                 HardwareState.nodes[node_id] = {
                     "node_id": node_id,
                     "name": f"Jetson Node ({node_id})",
-                    "ip": data.get("ip", "192.168.1.73"),
+                    "ip": data.get("ip"),
                     "last_seen": time.time(),
                     "is_online": True
                 }
@@ -134,7 +128,7 @@ def handle_alert_message(payload_str: str, node_id: Optional[str] = None):
             message=data.get("message", "Intrusión detectada"),
             confidence=float(data.get("confidence", 0.90)),
             snapshot=normalize_snapshot(data.get("snapshot") or data.get("image_base64")),
-            node_ip=data.get("ip", "192.168.1.73"),
+            node_ip=data.get("ip"),
             transport_label=" (MQTT)",
             store_embedding=False,
         )

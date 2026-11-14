@@ -135,7 +135,7 @@ def ingest_alert(
     message: str,
     confidence: float,
     snapshot: Optional[str],
-    node_ip: str,
+    node_ip: Optional[str],
     transport_label: str = "",
     background_tasks=None,
     store_embedding: bool = True,

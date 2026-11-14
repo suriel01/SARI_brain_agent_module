@@ -31,14 +31,19 @@ boot_time = datetime.datetime.now()
 class NodeTelemetryPayload(BaseModel):
     node_id: str
     name: Optional[str] = None
-    ip: Optional[str] = "192.168.55.1"
+    ip: Optional[str] = None
     ram_used_gb: Optional[float] = None
     ram_total_gb: Optional[float] = None
     cpu_load_pct: Optional[float] = None
     gpu_load_pct: Optional[float] = None
     temp_c: Optional[float] = None
     fps: Optional[float] = None
-    link_status: Optional[str] = "Stable (1Gbps)"
+    link_status: Optional[str] = None
+
+NODE_TELEMETRY_FIELDS = (
+    "ram_used_gb", "ram_total_gb", "cpu_load_pct", "gpu_load_pct", "temp_c", "fps", "link_status",
+)
+
 
 class HardwareState:
     """In-memory state tracker for physical actuators, node telemetry, and audit logs."""
@@ -48,41 +53,13 @@ class HardwareState:
     last_alert_time = 0.0
     last_alert_thread_id = None
     
-    # Registered Jetson Nodes (Tracked in real time)
-    nodes: Dict[str, Dict[str, Any]] = {
-        "Jetson-PTZ_1": {
-            "node_id": "Jetson-PTZ_1",
-            "name": "Jetson Orin CV Node",
-            "ip": "192.168.55.1",
-            "ram_used_gb": 3.8,
-            "ram_total_gb": 8.0,
-            "cpu_load_pct": 45.0,
-            "gpu_load_pct": 62.0,
-            "temp_c": 52.0,
-            "fps": 30.0,
-            "link_status": "USB Direct (1Gbps)",
-            "last_seen": time.time()
-        }
-    }
+    # Vision nodes, keyed by node id. Filled only from real telemetry/alerts (S15: nothing invented).
+    nodes: Dict[str, Dict[str, Any]] = {}
     
     logs = [
         {
-            "timestamp": (boot_time - datetime.timedelta(seconds=15)).strftime("%Y-%m-%d %H:%M:%S"), 
-            "message": "🔐 PostgreSQL Database connected & healthy with pgvector.", 
-            "level": "INFO",
-            "camera_module": "SYS_CORE",
-            "expires_at": (boot_time + datetime.timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
-        },
-        {
             "timestamp": (boot_time - datetime.timedelta(seconds=10)).strftime("%Y-%m-%d %H:%M:%S"), 
             "message": "🧠 Brain Module online & listening for YOLO vision node alerts.", 
-            "level": "INFO",
-            "camera_module": "SYS_CORE",
-            "expires_at": (boot_time + datetime.timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
-        },
-        {
-            "timestamp": (boot_time - datetime.timedelta(seconds=5)).strftime("%Y-%m-%d %H:%M:%S"), 
-            "message": "🔊 Audio microservice connected.", 
             "level": "INFO",
             "camera_module": "SYS_CORE",
             "expires_at": (boot_time + datetime.timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
@@ -97,23 +74,20 @@ class HardwareState:
     ]
 
     @classmethod
-    def record_node_activity(cls, node_id: str, ip: str = "192.168.55.1"):
+    def record_node_activity(cls, node_id: str, ip: Optional[str] = None):
+        """Marks a node as seen. Telemetry it has not reported stays None (unknown)."""
         if node_id not in cls.nodes:
             cls.nodes[node_id] = {
                 "node_id": node_id,
                 "name": f"Jetson Node ({node_id})",
                 "ip": ip,
-                "ram_used_gb": 3.8,
-                "ram_total_gb": 8.0,
-                "cpu_load_pct": 45.0,
-                "gpu_load_pct": 60.0,
-                "temp_c": 52.0,
-                "fps": 30.0,
-                "link_status": "USB Direct",
-                "last_seen": time.time()
+                **{field: None for field in NODE_TELEMETRY_FIELDS},
+                "last_seen": time.time(),
             }
         else:
             cls.nodes[node_id]["last_seen"] = time.time()
+            if ip:
+                cls.nodes[node_id]["ip"] = ip
 
     @classmethod
     def add_log(cls, msg: str, level: str = "INFO", camera_module: str = "SYS_CORE", ttl_hours: int = 24):
@@ -149,18 +123,19 @@ class HardwareState:
         cls.logs = kept
 
 def get_system_gpu_telemetry() -> Dict[str, Any]:
-    """Queries NVIDIA GPU (RTX 4070), host CPU, and Ollama AI model telemetry."""
-    telemetry = {
-        "gpu_name": "NVIDIA GeForce RTX 4070",
-        "gpu_load_pct": 0.0,
-        "vram_used_gb": 0.0,
-        "vram_total_gb": 8.0,
-        "vram_pct": 0.0,
-        "gpu_temp_c": 42.0,
-        "cpu_load_pct": 35.0,
-        "model_name": os.environ.get("OLLAMA_MODEL", "qwen2.5:7b"),
-        "model_status": "Ready in VRAM",
-        "has_gpu": True
+    """Queries host GPU, CPU and Ollama model telemetry. Values that could not be read are None (S15)."""
+    telemetry: Dict[str, Any] = {
+        "gpu_name": None,
+        "gpu_load_pct": None,
+        "vram_used_gb": None,
+        "vram_total_gb": None,
+        "vram_pct": None,
+        "gpu_temp_c": None,
+        "cpu_load_pct": None,
+        "cpu_temp_c": None,
+        "model_name": os.environ.get("OLLAMA_MODEL", "qwen2.5:7b"),  # configured model, not a measurement
+        "model_status": None,
+        "has_gpu": False,
     }
     
     # Try pynvml
@@ -179,6 +154,7 @@ def get_system_gpu_telemetry() -> Dict[str, Any]:
         if telemetry["vram_total_gb"] > 0:
             telemetry["vram_pct"] = round((telemetry["vram_used_gb"] / telemetry["vram_total_gb"]) * 100, 1)
         telemetry["gpu_temp_c"] = float(pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU))
+        telemetry["has_gpu"] = True
         pynvml.nvmlShutdown()
     except Exception:
         # Fallback to nvidia-smi execution
@@ -197,6 +173,7 @@ def get_system_gpu_telemetry() -> Dict[str, Any]:
                 telemetry["gpu_temp_c"] = float(out[3].strip())
                 if len(out) >= 5:
                     telemetry["gpu_name"] = out[4].strip()
+                telemetry["has_gpu"] = True
         except Exception:
             pass
 
@@ -204,7 +181,6 @@ def get_system_gpu_telemetry() -> Dict[str, Any]:
     try:
         import psutil
         telemetry["cpu_load_pct"] = float(psutil.cpu_percent(interval=None))
-        telemetry["cpu_temp_c"] = 52.0
         temps = psutil.sensors_temperatures() if hasattr(psutil, 'sensors_temperatures') else {}
         if temps:
             for key in ['coretemp', 'cpu_thermal', 'k10temp', 'acpitz']:
@@ -220,14 +196,16 @@ def get_system_gpu_telemetry() -> Dict[str, Any]:
         res = requests.get(f"{ollama_base}/api/ps", timeout=0.8)
         if res.status_code == 200:
             running_models = res.json().get("models", [])
+            telemetry["model_status"] = "Not loaded"
             if running_models:
                 m0 = running_models[0]
                 telemetry["model_name"] = m0.get("name", telemetry["model_name"])
                 telemetry["model_status"] = "Active in VRAM"
                 size_vram = m0.get("size_vram", 0)
-                if size_vram > 0 and telemetry["vram_used_gb"] < 0.5:
+                if size_vram > 0 and (telemetry["vram_used_gb"] or 0.0) < 0.5:
                     telemetry["vram_used_gb"] = round(size_vram / (1024 ** 3), 2)
-                    telemetry["vram_pct"] = round((telemetry["vram_used_gb"] / telemetry["vram_total_gb"]) * 100, 1)
+                    if telemetry["vram_total_gb"]:
+                        telemetry["vram_pct"] = round((telemetry["vram_used_gb"] / telemetry["vram_total_gb"]) * 100, 1)
     except Exception:
         pass
 
@@ -445,14 +423,8 @@ def receive_node_telemetry(payload: NodeTelemetryPayload, auth_node: str = Depen
     node_data = {
         "node_id": node_id,
         "name": payload.name or f"Jetson Node ({node_id})",
-        "ip": payload.ip or "192.168.55.1",
-        "ram_used_gb": payload.ram_used_gb if payload.ram_used_gb is not None else 3.8,
-        "ram_total_gb": payload.ram_total_gb if payload.ram_total_gb is not None else 8.0,
-        "cpu_load_pct": payload.cpu_load_pct if payload.cpu_load_pct is not None else 45.0,
-        "gpu_load_pct": payload.gpu_load_pct if payload.gpu_load_pct is not None else 62.0,
-        "temp_c": payload.temp_c if payload.temp_c is not None else 52.0,
-        "fps": payload.fps if payload.fps is not None else 30.0,
-        "link_status": payload.link_status or "1Gbps USB Direct",
+        "ip": payload.ip,
+        **{field: getattr(payload, field) for field in NODE_TELEMETRY_FIELDS},
         "last_seen": time.time(),
         "is_online": True
     }

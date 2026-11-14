@@ -148,6 +148,8 @@ def seed_initial_data() -> None:
 def startup_event():
     init_db()
     seed_initial_data()
+    # Logged only after the schema step and the seed queries actually succeeded (S15).
+    hardware.HardwareState.add_log("🔐 Database reachable; schema at the latest migration.", level="INFO", camera_module="SYS_CORE")
 
     # Iniciar cliente MQTT en segundo plano
     try:
