@@ -719,7 +719,7 @@ export default function ChatPanel({ token, permissions, requestPin, fetchState, 
           <div ref={endRef} />
         </div>
 
-        {/* Input Bar: Google Antigravity Capsule */}
+        {/* Input Bar: Capsule */}
         <div className="px-6 py-4 flex justify-center border-t border-zinc-200/80 dark:border-zinc-800/80 bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl z-10 transition-colors">
           <div className="w-full max-w-4xl flex items-center gap-3">
             

@@ -175,14 +175,12 @@ SARI_brain_agent_module/
 │   └── src/
 │       ├── components/        # Login, Dashboard, ChatPanel, EyesPanel, ControlPanel, UsersPanel
 │       └── i18n/              # Soporte multilingüe (Español / English)
-├── mosquitto/                 # Configuración y credenciales del broker MQTT
-├── specs/                     # Especificaciones técnicas formales (001 a 005)
-│   ├── 001-protocolo-seguridad.md
-│   ├── 002-mqtt-wireless-telemetry.md
-│   ├── 003-eyes-surveillance-module.md
-│   ├── 004-telegram-tactical-integration.md
-│   └── 005-hardware-tamper-autoprotection.md
-├── doc/                       # Documentación de arquitectura, prompts y tareas
+├── mosquitto/                 # Configuración del broker MQTT (passwd se genera localmente)
+├── docs/
+│   ├── SARI_architecture.md   # Arquitectura del sistema
+│   ├── specs/                 # Especificaciones técnicas formales (001 a 005)
+│   └── archive/antigravity/   # Documentos de proceso del flujo anterior (histórico)
+├── odd/tasks/                 # Documentos de feature ODD (specs, tareas, bitácora)
 ├── tests/                     # Suite de pruebas automatizadas (pytest)
 ├── sirena_service.py          # Microservicio emulador de sirena táctica física
 ├── jetson_telemetry.py        # Daemon dual MQTT/HTTP para nodos NVIDIA Jetson

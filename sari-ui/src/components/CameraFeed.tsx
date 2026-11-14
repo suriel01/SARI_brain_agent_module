@@ -59,7 +59,7 @@ export default function CameraFeed() {
   return (
     <div className="w-full h-full flex flex-col items-center justify-start gap-4 p-2 overflow-y-auto">
       
-      {/* Google Antigravity Card Container */}
+      {/* Card Container */}
       <div className="w-full max-w-5xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800/80 rounded-3xl p-5 shadow-sm flex flex-col gap-4 transition-all">
         
         {/* Card Header with Pill Badges */}
