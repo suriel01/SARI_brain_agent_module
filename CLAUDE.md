@@ -20,6 +20,7 @@ The backend fails closed without these (`backend/app/config.py`):
 - `SARI_SIREN_TOKEN` — shared secret between backend and siren service
 - `SARI_ADMIN_PASSWORD` — only needed when no `admin` user exists yet
 - `SARI_NODE_KEYS` — `node_id:key,...`; vision nodes send `X-SARI-Node-Key`. Empty means every node request is rejected
+- `SARI_ALLOWED_STREAM_HOSTS` — optional, comma list of exact LAN hostnames allowed as node `ip`/`stream_url`; otherwise only RFC1918 IPv4 literals are accepted (`backend/app/netpolicy.py`)
 - `SARI_MCP_HARDWARE_ENABLED` — optional, `true` lets the local MCP server (`backend/app/sari_mcp_server.py`) drive hardware; default off
 
 ## Commands
@@ -37,6 +38,9 @@ The backend fails closed without these (`backend/app/config.py`):
 ## Security rules (non-negotiable)
 - No real secrets in `docker-compose.yml`, code defaults, docs or tests. Secrets come from `.env` (see `.env.example`).
 - Every physical action goes through one choke point (`execute_physical_tool(..., actor=Actor)` in `routers/hardware.py`) that checks the actor's `can_control_hardware` permission and records an audit entry. No channel (REST, chat/LLM, Telegram, MCP, MQTT ingest) bypasses it.
+- Every call to `execute_physical_tool` (success, denied, failed) is persisted in `physical_action_log`; read it via `GET /api/hardware/audit`. A siren call that fails returns `status: failed` and never changes state; gates are simulated (no hardware).
+- Alert ingest (REST and MQTT) goes through `services/alert_ingest.py` `ingest_alert`; do not duplicate the pipeline.
+- Outbound fetches to node addresses go through `netpolicy.validate_stream_url` (SSRF).
 - Machine-to-machine endpoints require node credentials; nothing that triggers hardware is unauthenticated.
 - The LLM never decides authorization; the backend does.
 - `get_current_user` re-reads role and permissions from the DB on every request; the JWT only proves identity. The WebSocket (`/ws`, `/`) takes the JWT as `?token=` and closes with 1008 without it.

@@ -30,13 +30,13 @@ Branch: `chore/claude-odd-reorg` (reorg + test base), then `fix/security-hardeni
 | T7 | S9 | delegated | done | d7c1763 — RED 22 failed (no `handle_telegram_callback`, silence without PIN); GREEN 89 passed |
 | T8 | S10 | delegated | done | ff0519d — RED 12 WS + 8 eyes failed; GREEN 119 passed; `tsc -b` ok |
 | T10 | S12 | delegated | done | 8154b1b — RED collection error (no `ratelimit`) + 5 live-permission failed; GREEN 137 passed |
-| T5 | S8 | inline | pending | — |
-| T6 | S4 | inline | pending | — |
-| T9 | S11 | inline | pending | — |
+| T5 | S8 | delegated | done | 1dc8adc — RED 12 failed (no `PhysicalActionLog`, no `/audit`); GREEN 152 passed |
+| T6 | S4 | delegated | done | 5b6821c — RED 16 failed (toggle on explicit actions, siren failure reported as success, no `gates_simulated`, fake snapshot served); GREEN 171 passed; `tsc -b` ok |
+| T9 | S11 | delegated | done | a21bbc9 — RED collection error (no `netpolicy`); GREEN 215 passed |
 | T11 | S13 | inline | pending | — |
 | T12 | S14 | inline | pending | — |
 | T13 | — | inline | pending | Alembic migrations |
-| T14 | — | inline | pending | dedupe alert ingest |
+| T14 | — | delegated | done | 1e09f6d — characterization 8 passed on old code, RED 3 (shared pipeline, failed siren announced) + 5 chat fabrications; GREEN 231 passed |
 | E1 | — | other repo | deferred | Eyes repo hardening (separate session) |
 
 Route evidence: all tasks inline; no Writer trigger (units are sequential and share `hardware.py`/`security.py`).
@@ -54,3 +54,9 @@ Route evidence: all tasks inline; no Writer trigger (units are sequential and sh
 - L10: T8 deviation: no new permission column; Eyes mutations (create, update, delete, tracking, PTZ, test-connection) require `can_control_hardware`. UI WebSocket URL built by `realtimeWsUrl(token)` in `sari-ui/src/config.ts`; `EyesModule.tsx` left untouched (owner's uncommitted work).
 - L11: T10 deviations: client IP is `request.client.host` (X-Forwarded-For not trusted). Empty PINs are not counted as guesses. Telegram free text now tries only its last numeric token as the PIN (a single message could otherwise carry hundreds of guesses) and the PIN is redacted before the message is stored in chat history. Lockout state is in-memory per process.
 - L12: Open gap: `require_pin` callers in `routers/hardware.py` (`manual_action`) and `routers/chat.py` (4 calls) still pass no `key`, so their wrong PINs are not counted yet; they were outside the T10 edit surface. Fix: `require_pin(..., key=f"user:{current_user.get('id')}")`.
+- L13: T5/T6/T9/T14 done by a delegated writer. L12 gap is closed (1630f63 already passes `key=` in `manual_action` and chat).
+- L14: T5 decisions: the audit row is written inside `execute_physical_tool` with its own `SessionLocal()`; actions are stored under canonical English names (`activate_siren`, ...). Audit write failures are logged at ERROR and never block the action: fail-open is intentional for a siren (a missing audit row is better than a silent perimeter). `manual_action` 403s are audited too; chat fast-rails now always call the choke point so their denials are audited. No migration: `create_all` creates `physical_action_log` (T13 Alembic will own it).
+- L15: T6 decisions: explicit actions set state; `toggle_sirena`/`toggle_accesos` kept as toggles because `HardwarePanel.tsx` and `Dashboard.tsx` send them; the UI now alerts when the response status is not `success`. Siren failure (exception or non-2xx) returns `failed`, keeps state, logs ERROR, is audited and not broadcast; Telegram and chat only claim success on `success`. `/api/hardware/snapshot/{cam_id}` removed (grep: only `routers/chat.py` linked it; nothing in `sari-ui/src`).
+- L16: T9 decisions: `backend/app/netpolicy.py`. Allowed: http/https/rtsp to RFC1918 IPv4 literals, or hostnames listed exactly in `SARI_ALLOWED_STREAM_HOSTS` (no DNS resolution, so LAN names must be listed). Always denied: loopback, link-local/metadata, 0.0.0.0, localhost, host.docker.internal, IPv6 literals (assumption: no IPv6 nodes). Validators live on `EyeNodeCreate`/`EyeNodeUpdate` only, so legacy DB rows still list. Connection test: 422 on disallowed targets, `allow_redirects=False`, generic `connection failed` error, rtsp checked by TCP connect. Telegram `fetch_node_snapshot` re-validates every candidate URL (including node-reported telemetry IPs) and disables redirects.
+- L17: T14 decisions: `backend/app/services/alert_ingest.py` `ingest_alert`. Behaviour kept per transport (MQTT label `(MQTT)`, MQTT node IP from payload, MQTT stores no embedding as before). Deliberate changes: a failed siren is no longer announced as started nor broadcast (a failure message is stored instead); MQTT non-intrusion low-severity logs use INFO like REST (was WARN). MQTT siren actor is still the node named in the payload; authenticating it is T11 (broker ACLs). Chat status/snapshot fast-rails no longer fabricate IPs, detections or recording state.
+- L18: Open: `HardwareState.nodes` still boots with a placeholder `Jetson-PTZ_1` entry carrying fake telemetry (shown online for 120 s after boot) and telemetry defaults fill missing fields with fake values (`hardware.py`, `mqtt/handlers.py`); `get_system_gpu_telemetry` also has fake fallbacks. Not in T14 scope; candidate follow-up.
