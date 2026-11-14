@@ -29,7 +29,7 @@ Branch: `feat/alarm-state-machine` (stacked on `feat/hexagonal-core`). Delivery:
 | ID | Specs | Route | Status | Commit |
 |---|---|---|---|---|
 | B1 | S1, S2, S3 | inline | done (38 tests RED→GREEN) | see git log |
-| B2 | S4, S6, S7 | inline | pending | |
+| B2 | S4, S6, S7 | inline | done (21 tests RED→GREEN, suite 477 passed) | see git log |
 | B3 | S5 | inline or writer (parallel with B4) | pending | |
 | B4 | S4, S5, S6 (UI) | writer (parallel with B3) | pending | |
 

@@ -6,10 +6,12 @@ is shared by every worker and survives restarts.
 import datetime
 from typing import Optional
 
+from ..application.alarm import AlarmService
 from ..application.physical_actions import ExecutePhysicalAction
 from ..database import SessionLocal
 from ..domain.actors import Actor
 from .actuators.siren_http import HttpSiren
+from .persistence.alarm_sql import SqlAlarmRepository
 from .persistence.audit_sql import SqlAudit
 from .persistence.state_sql import SqlStateRepository
 from .realtime.ws_broadcast import WsBroadcast
@@ -19,6 +21,8 @@ boot_time = datetime.datetime.now()
 state = SqlStateRepository(SessionLocal)
 broadcaster = WsBroadcast()
 physical_action = ExecutePhysicalAction(siren=HttpSiren(), audit=SqlAudit(), broadcast=broadcaster, state=state)
+alarm = AlarmService(repo=SqlAlarmRepository(SessionLocal), physical_action=physical_action, audit=SqlAudit(),
+                     broadcast=broadcaster)
 
 
 def execute_physical_tool(tool_name: str, args: Optional[dict] = None, *, actor: Optional[Actor]):

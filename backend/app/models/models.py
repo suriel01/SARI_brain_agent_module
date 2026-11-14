@@ -141,3 +141,41 @@ class NodeFlags(Base):
     node_id = Column(String(100), primary_key=True)
     disconnect_notified = Column(Boolean, nullable=False, default=False)  # watchdog alert already sent
     tracking_enabled = Column(Boolean, nullable=True)  # operator choice; None = node default
+
+
+class AlarmStateRow(Base):
+    """Single-row alarm state machine status (id is always 1); see `app.domain.alarm`."""
+
+    __tablename__ = "alarm_state"
+
+    id = Column(Integer, primary_key=True)
+    state = Column(String(20), nullable=False)
+    mode = Column(String(10), nullable=True)
+    since = Column(Float, nullable=False)
+    deadline = Column(Float, nullable=True)
+    cause = Column(String(200), nullable=False, default="")
+
+
+class AlarmEventRow(Base):
+    """Alarm timeline: transitions, ignored detections, failed-to-arm attempts, faults raised and cleared."""
+
+    __tablename__ = "alarm_event"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    at = Column(Float, nullable=False, index=True)
+    kind = Column(String(30), nullable=False)
+    from_state = Column(String(20), nullable=True)
+    to_state = Column(String(20), nullable=True)
+    cause = Column(String(200), nullable=False, default="")
+    actor = Column(String(100), nullable=False, default="")
+
+
+class AlarmFaultRow(Base):
+    """Active supervision faults by device (a missed heartbeat); removed when the device is back."""
+
+    __tablename__ = "alarm_fault"
+
+    device_id = Column(String(100), primary_key=True)
+    kind = Column(String(30), nullable=False)
+    since = Column(Float, nullable=False)
+    reason = Column(String(200), nullable=False, default="")

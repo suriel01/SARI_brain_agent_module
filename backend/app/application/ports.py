@@ -1,7 +1,8 @@
 """Ports the use cases depend on; `app.adapters` provides the concrete implementations."""
-from typing import Any, Dict, Iterable, List, Optional, Protocol, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Protocol, Tuple
 
 from ..domain.actors import Actor
+from ..domain.alarm import AlarmStatus
 from ..domain.state import ActuatorState, RuntimeState
 
 
@@ -90,6 +91,31 @@ class StateRepository(Protocol):
     def list_logs(self, limit: Optional[int] = None) -> List[Dict[str, Any]]: ...
 
     def purge_expired_logs(self) -> None: ...
+
+
+class AlarmRepository(Protocol):
+    """Alarm status (one row shared by every process), its timeline and the active supervision faults."""
+
+    def read(self) -> AlarmStatus: ...
+
+    def update(self, change: Callable[[AlarmStatus], AlarmStatus], *, actor: str = "",
+               kind: str = "transition") -> Tuple[AlarmStatus, AlarmStatus]:
+        """Locks the status, applies ``change``, stores the result and appends a timeline event when the
+        state changed, in one transaction. Returns (before, after). If ``change`` raises, nothing is written."""
+
+    def record_event(self, kind: str, *, at: float, actor: str = "", cause: str = "",
+                     state: Optional[str] = None) -> None: ...
+
+    def timeline(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Newest first."""
+
+    def raise_fault(self, device_id: str, kind: str, reason: str, at: float) -> bool:
+        """Stores an active fault and its timeline event. True only when it was not already active."""
+
+    def clear_fault(self, device_id: str, at: float) -> bool:
+        """Removes an active fault and records it as cleared. True only when it was active."""
+
+    def active_faults(self) -> List[Dict[str, Any]]: ...
 
 
 # Former name of the port, kept so existing imports keep working.

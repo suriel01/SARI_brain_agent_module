@@ -31,5 +31,15 @@ class Actor:
         """An authenticated vision node may raise the alarm, never silence it or touch gates."""
         return cls(name=f"node:{node_id}", channel="node", can_control_hardware=True, allowed_tools=frozenset(ACTIVATE_SIREN))
 
+    @classmethod
+    def system(cls, name: str) -> "Actor":
+        """The alarm itself (an entry delay ran out): may raise the siren, nothing else."""
+        return cls(name=f"system:{name}", channel="system", can_control_hardware=True,
+                   allowed_tools=frozenset(ACTIVATE_SIREN))
+
+    def may_change_alarm_mode(self) -> bool:
+        """Only a human with hardware permission arms or disarms; nodes and the system never do."""
+        return self.can_control_hardware and self.channel not in ("node", "system")
+
     def may_run(self, tool_name: str) -> bool:
         return self.can_control_hardware and tool_name in self.allowed_tools

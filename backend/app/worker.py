@@ -37,7 +37,16 @@ def maintenance_tick(now: Optional[float] = None):
     """One scheduler pass over the shared state."""
     from .adapters.composition import state
 
-    result = run_maintenance(state, registered_node_ids(), time.time() if now is None else now)
+    now = time.time() if now is None else now
+    result = run_maintenance(state, registered_node_ids(), now)
+    try:
+        from .adapters.composition import alarm
+
+        siren = alarm.tick(now)
+        if siren is not None:
+            logger.warning("[WORKER] Entry delay expired: siren %s", siren.get("status"))
+    except Exception:
+        logger.exception("[WORKER] Alarm timer pass failed")
     if result.siren_expired:
         logger.info("[WORKER] Siren auto-off after %ss without alerts", SIREN_AUTO_OFF_SECONDS)
     if result.pruned_nodes:

@@ -12,7 +12,7 @@ get_settings()
 from .models import models
 from .schemas import schemas
 from .crud import crud
-from .routers import auth, chat, hardware, users, alerts, eyes
+from .routers import alarm, auth, chat, hardware, users, alerts, eyes
 
 from pathlib import Path
 
@@ -205,6 +205,7 @@ app.include_router(alerts.router, prefix="/api/alert", tags=["alerts"])
 app.include_router(alerts.router, prefix="/api", tags=["alerts"])
 app.include_router(alerts.router, prefix="/alerts", tags=["alerts"])
 app.include_router(hardware.router, prefix="/api/hardware", tags=["hardware"])
+app.include_router(alarm.router, prefix="/api/alarm", tags=["alarm"])
 app.include_router(eyes.router, prefix="/api/eyes", tags=["eyes"])
 app.include_router(hardware.router, prefix="/api", tags=["hardware"])
 
