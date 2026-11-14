@@ -65,3 +65,23 @@ class EyeNode(Base):
     yolo_threshold = Column(Float, default=0.70)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+def _utcnow():
+    from datetime import timezone
+
+    return datetime.now(timezone.utc)
+
+
+class PhysicalActionLog(Base):
+    """Persistent audit trail of every physical action request (S8), including denied and failed ones."""
+
+    __tablename__ = "physical_action_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime(timezone=True), default=_utcnow, index=True, nullable=False)
+    actor_name = Column(String(100), nullable=False)
+    channel = Column(String(30), nullable=False)
+    action = Column(String(50), nullable=False)
+    result = Column(String(20), nullable=False)  # success | denied | failed
+    detail = Column(Text, nullable=True)

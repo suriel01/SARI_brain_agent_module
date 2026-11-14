@@ -6,16 +6,18 @@ import os
 import time
 import datetime
 import asyncio
+import logging
 from dataclasses import dataclass, field
 from ..schemas import schemas
 from ..models import models
 from ..database import SessionLocal
-from .deps import get_current_user
+from .deps import get_current_user, require_hardware_user
 from ..security import has_perm, require_pin
 from ..ws import manager
 from ..node_auth import require_node
 
 router = APIRouter()
+logger = logging.getLogger("sari_hardware")
 
 SIRENA_SERVICE_URL = os.environ.get("SIRENA_SERVICE_URL", "http://localhost:5000")
 
@@ -264,11 +266,60 @@ class Actor:
         return self.can_control_hardware and tool_name in self.allowed_tools
 
 
-def execute_physical_tool(tool_name: str, args: dict = None, *, actor: Actor):
-    """Single choke point for physical actions. Checks the actor's permission before touching hardware."""
-    if args is None:
-        args = {}
+def canonical_action(tool_name: str) -> str:
+    """Maps Spanish/English tool aliases to one canonical name for the audit trail."""
+    for canonical, aliases in (
+        ("activate_siren", ACTIVATE_SIREN),
+        ("deactivate_siren", DEACTIVATE_SIREN),
+        ("lock_gates", LOCK_GATES),
+        ("unlock_gates", UNLOCK_GATES),
+    ):
+        if tool_name in aliases:
+            return canonical
+    return str(tool_name)[:50]
 
+
+def record_physical_action(actor: Optional[Actor], tool_name: str, result: str, detail: str = "") -> None:
+    """Persists one audit row (S8). Never raises: a broken audit DB must not block raising the alarm.
+
+    Fail-open is deliberate for a siren: losing an audit row is preferable to a silent perimeter.
+    The failure is logged at ERROR so it is visible.
+    """
+    try:
+        db = SessionLocal()
+    except Exception as exc:
+        logger.error("Physical action audit unavailable (%s): %s by %s", exc, tool_name, actor.name if actor else "anonymous")
+        return
+    try:
+        db.add(
+            models.PhysicalActionLog(
+                actor_name=(actor.name if actor else "anonymous")[:100],
+                channel=(actor.channel if actor else "unknown")[:30],
+                action=canonical_action(tool_name),
+                result=result,
+                detail=detail or None,
+            )
+        )
+        db.commit()
+    except Exception as exc:
+        logger.error("Could not persist physical action audit row: %s", exc)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+def execute_physical_tool(tool_name: str, args: dict = None, *, actor: Actor):
+    """Single choke point for physical actions: checks the actor's permission and audits every call."""
+    result = _execute_physical_tool(tool_name, args or {}, actor=actor)
+    status = result.get("status")
+    record_physical_action(actor, tool_name, status if status in ("success", "denied", "failed") else "failed", result.get("message", ""))
+    return result
+
+
+def _execute_physical_tool(tool_name: str, args: dict, *, actor: Actor):
     if actor is None or not actor.may_run(tool_name):
         who = actor.name if actor else "anonymous"
         via = actor.channel if actor else "unknown"
@@ -398,12 +449,13 @@ def receive_node_telemetry(payload: NodeTelemetryPayload, auth_node: str = Depen
 
 @router.post("/manual_action")
 def manual_action(req: dict, current_user: dict = Depends(get_current_user)):
+    action = req.get("action")
+    actor = Actor.from_user(current_user, "rest")
     if not has_perm(current_user, "can_control_hardware"):
+        record_physical_action(actor, str(action), "denied", "manual_action without can_control_hardware")
         raise HTTPException(status_code=403, detail="Insufficient permissions")
     require_pin(req.get("pin"), key=f"user:{current_user.get('id')}")
 
-    action = req.get("action")
-    actor = Actor.from_user(current_user, "rest")
     if action in ["toggle_sirena", "toggle_siren", "activar_sirena", "activate_siren", "desactivar_sirena", "deactivate_siren"]:
         if HardwareState.siren_active:
             return execute_physical_tool("deactivate_siren", {}, actor=actor)
@@ -417,6 +469,37 @@ def manual_action(req: dict, current_user: dict = Depends(get_current_user)):
             return execute_physical_tool("lock_gates", {}, actor=actor)
     
     raise HTTPException(status_code=400, detail=f"Unknown hardware action: {action}")
+
+AUDIT_MAX_LIMIT = 500
+
+
+@router.get("/audit")
+def list_physical_action_audit(limit: int = 100, current_user: dict = Depends(require_hardware_user)):
+    """Persistent physical-action audit trail, newest first (S8)."""
+    limit = max(1, min(int(limit), AUDIT_MAX_LIMIT))
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(models.PhysicalActionLog)
+            .order_by(models.PhysicalActionLog.timestamp.desc(), models.PhysicalActionLog.id.desc())
+            .limit(limit)
+            .all()
+        )
+        return [
+            {
+                "id": r.id,
+                "timestamp": r.timestamp.isoformat() if r.timestamp else None,
+                "actor_name": r.actor_name,
+                "channel": r.channel,
+                "action": r.action,
+                "result": r.result,
+                "detail": r.detail,
+            }
+            for r in rows
+        ]
+    finally:
+        db.close()
+
 
 @router.get("/snapshot/{cam_id}")
 def get_camera_snapshot(cam_id: str):

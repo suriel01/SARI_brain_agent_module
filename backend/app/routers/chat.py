@@ -51,6 +51,13 @@ rails_app.register_action(action_activate_siren, name="execute_activar_sirena")
 rails_app.register_action(action_deactivate_siren, name="execute_desactivar_sirena")
 rails_app.register_action(action_lock_gates, name="execute_cerrar_accesos")
 
+def _failure_reply(result: dict, lang: str) -> str:
+    detail = result.get("message", "")
+    if lang == "en":
+        return f"⚠️ The physical action could not be completed: {detail}"
+    return f"⚠️ La acción física no pudo completarse: {detail}"
+
+
 @router.post("", response_model=schemas.ChatMessageResponse)
 @router.post("/", response_model=schemas.ChatMessageResponse)
 async def chat_endpoint(req: schemas.ChatRequest, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
@@ -77,7 +84,6 @@ async def chat_endpoint(req: schemas.ChatRequest, db: Session = Depends(get_db),
     crud.add_message(db, thread_id, role="user", content=req.message)
     HardwareState.add_log(f"💬 User [{current_user.get('username') or 'Operator'}]: {req.message[:50]}", level="INFO", camera_module="CHAT_USER")
     msg_lower = req.message.lower()
-    can_hw = has_perm(current_user, "can_control_hardware")
     chat_actor = Actor.from_user(current_user, "chat")
 
     # Fast-rail: Deactivate / Silence Siren
@@ -87,10 +93,12 @@ async def chat_endpoint(req: schemas.ChatRequest, db: Session = Depends(get_db),
         "silenciar sirena", "silenciar alarma", "turn off siren", "deactivate siren", 
         "turn off alarm", "deactivate alarm", "silence siren", "silence alarm", "stop siren"
     ]):
-        if not can_hw:
+        result = execute_physical_tool("deactivate_siren", {}, actor=chat_actor)
+        if result.get("status") == "denied":
             resp_content = "Protocol denied: Insufficient clearance to deactivate the physical siren." if lang == "en" else "Protocolo denegado: Autorización insuficiente para desactivar la sirena/alarma física."
+        elif result.get("status") != "success":
+            resp_content = _failure_reply(result, lang)
         else:
-            execute_physical_tool("deactivate_siren", {}, actor=chat_actor)
             resp_content = "🔊 Acknowledged. The physical alarm/siren has been deactivated. The system returns to normal monitoring state." if lang == "en" else "🔊 Entendido. La sirena física/alarma ha sido desactivada. El sistema vuelve a su estado de monitoreo normal."
         msg_db = crud.add_message(db, thread_id, role="agent", content=resp_content)
         return msg_db
@@ -102,10 +110,12 @@ async def chat_endpoint(req: schemas.ChatRequest, db: Session = Depends(get_db),
         "sonar alarma", "sonar sirena", "turn on siren", "activate siren", "turn on alarm", 
         "activate alarm", "sound alarm", "sound siren"
     ]):
-        if not can_hw:
+        result = execute_physical_tool("activate_siren", {"duration_seconds": 30}, actor=chat_actor)
+        if result.get("status") == "denied":
             resp_content = "Protocol denied: Insufficient clearance to activate the physical siren." if lang == "en" else "Protocolo denegado: Autorización insuficiente para activar la sirena/alarma física."
+        elif result.get("status") != "success":
+            resp_content = _failure_reply(result, lang)
         else:
-            execute_physical_tool("activate_siren", {"duration_seconds": 30}, actor=chat_actor)
             resp_content = "🚨 Acknowledged. I have activated the emergency physical siren for 30 seconds. Perimeter is now on maximum alert." if lang == "en" else "🚨 Entendido. He activado la sirena física/alarma de emergencia por 30 segundos. El sistema se encuentra en alerta máxima."
         msg_db = crud.add_message(db, thread_id, role="agent", content=resp_content)
         return msg_db
@@ -115,10 +125,12 @@ async def chat_endpoint(req: schemas.ChatRequest, db: Session = Depends(get_db),
         "bloquear accesos", "cerrar accesos", "bloquea accesos", "cerrar puertas", 
         "lock gates", "close gates", "lock perimeter", "close doors"
     ]):
-        if not can_hw:
+        result = execute_physical_tool("lock_gates", {}, actor=chat_actor)
+        if result.get("status") == "denied":
             resp_content = "Protocol denied: Insufficient clearance to lock perimeter gates." if lang == "en" else "Protocolo denegado: Autorización insuficiente para bloquear accesos."
+        elif result.get("status") != "success":
+            resp_content = _failure_reply(result, lang)
         else:
-            execute_physical_tool("lock_gates", {}, actor=chat_actor)
             resp_content = "🔒 Acknowledged. All perimeter gates and access points have been locked successfully." if lang == "en" else "🔒 Entendido. Todos los accesos perimetrales han sido bloqueados con éxito."
         msg_db = crud.add_message(db, thread_id, role="agent", content=resp_content)
         return msg_db
