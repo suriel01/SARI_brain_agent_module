@@ -26,4 +26,5 @@ ENV PORT=7000
 ENV OLLAMA_URL=http://host.docker.internal:11434/api/chat
 ENV SIRENA_SERVICE_URL=http://sari-sirena:5000
 
-ENTRYPOINT ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7000"]
+# API only. Background work runs in `python -m app.worker` (the sari-worker service).
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7000"]

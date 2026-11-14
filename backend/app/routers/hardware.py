@@ -22,6 +22,7 @@ from ..adapters.persistence.audit_sql import record_physical_action
 from ..adapters.state.legacy_facade import HardwareState  # deprecated facade, re-exported for tests only
 from ..adapters.composition import boot_time, execute_physical_tool, state
 from ..domain.state import NODE_TELEMETRY_FIELDS
+from ..application.maintenance import GHOST_NODE_SECONDS, SIREN_AUTO_OFF_SECONDS  # noqa: F401  (re-exported)
 
 __all__ = [
     "ACTIVATE_SIREN", "ALL_TOOLS", "Actor", "DEACTIVATE_SIREN", "HardwareState", "LOCK_GATES", "NODE_TELEMETRY_FIELDS",
@@ -31,8 +32,6 @@ __all__ = [
 
 router = APIRouter()
 
-SIREN_AUTO_OFF_SECONDS = 30
-GHOST_NODE_SECONDS = 60.0
 logger = logging.getLogger("sari_hardware")
 
 
@@ -140,22 +139,8 @@ def get_system_gpu_telemetry() -> Dict[str, Any]:
 
 @router.get("/state")
 def get_state(current_user: dict = Depends(get_current_user)):
+    """Read-only view of the live state. Siren auto-off and ghost-node pruning run in the worker."""
     now = time.time()
-    state.purge_expired_logs()
-    state.expire_siren(now, SIREN_AUTO_OFF_SECONDS)
-
-    # Synchronize with registered active EyeNode records from database
-    db = SessionLocal()
-    try:
-        registered_eyes = db.query(models.EyeNode).filter(models.EyeNode.is_active == True).all()
-        registered_ids = {e.node_id for e in registered_eyes}
-        if not registered_ids:
-            registered_ids = {"Jetson-PTZ_1"}
-    finally:
-        db.close()
-
-    # Clean up expired ephemeral test nodes (older than 60s and not registered in EyeNode)
-    state.prune_nodes(now - GHOST_NODE_SECONDS, keep=registered_ids)
     nodes_list = []
     active_count = 0
     for node in state.list_nodes().values():

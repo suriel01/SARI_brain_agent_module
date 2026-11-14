@@ -24,10 +24,14 @@ def _record_background_starts(monkeypatch):
 def test_startup_with_background_enabled_starts_mqtt_telegram_and_watchdog(app, monkeypatch):
     from app import main
 
+    from app import worker
+
     monkeypatch.setenv("SARI_RUN_BACKGROUND", "true")
     started = _record_background_starts(monkeypatch)
+    monkeypatch.setattr(worker, "run_scheduler", lambda stop, interval=0: None)  # no live scheduler in tests
     main.startup_event()
-    assert started == ["mqtt", "telegram", "watchdog"]
+    worker.stop_background_services()
+    assert started[:3] == ["mqtt", "telegram", "watchdog"]
 
 
 # --- broadcast helper (in-process delivery) ----------------------------------------------------

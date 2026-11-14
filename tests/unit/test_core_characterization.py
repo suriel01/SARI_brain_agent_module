@@ -216,11 +216,16 @@ def test_state_requires_auth(client):
 
 
 def test_state_turns_siren_off_30s_after_last_alert(client, admin_headers):
+    # A3 (S4): the auto-off moved from the /state GET to the worker's maintenance pass.
+    from app.worker import maintenance_tick
+
     HardwareState.siren_active = True
     HardwareState.last_alert_time = time.time() - 31
+    maintenance_tick()
     assert client.get("/api/hardware/state", headers=admin_headers).json()["siren_active"] is False
     HardwareState.siren_active = True
     HardwareState.last_alert_time = time.time() - 5
+    maintenance_tick()
     assert client.get("/api/hardware/state", headers=admin_headers).json()["siren_active"] is True
 
 
@@ -231,6 +236,10 @@ def test_state_prunes_stale_unregistered_nodes(client, admin_headers):
     HardwareState.nodes["fresh"] = {"node_id": "fresh", "last_seen": now - 5}
     HardwareState.nodes["Jetson-PTZ_1"] = {"node_id": "Jetson-PTZ_1", "last_seen": now - 500}
     try:
+        # A3 (S4): pruning moved from the /state GET to the worker's maintenance pass.
+        from app.worker import maintenance_tick
+
+        maintenance_tick()
         body = client.get("/api/hardware/state", headers=admin_headers).json()
         ids = {n["node_id"]: n for n in body["nodes"]}
         assert set(ids) == {"fresh", "Jetson-PTZ_1"}
