@@ -134,7 +134,17 @@ docker compose up -d --build
 ```bash
 docker compose ps
 ```
-Deberás ver activos: `sari-ui`, `sari-backend`, `sari-mqtt`, `sari-sirena` y `sari_postgres`.
+Deberás ver activos: `sari-ui`, `sari-backend`, `sari-worker`, `sari-mqtt`, `sari-sirena` y `sari_postgres`.
+
+**Processes (A3).** `sari-backend` serves the API with `uvicorn --workers 2` and starts no background
+work. `sari-worker` (same image, `python -m app.worker`) is the only process that consumes MQTT,
+polls Telegram, runs the anti-tamper watchdog and the scheduler (siren auto-off, ghost-node
+pruning). Live state, login/PIN lockouts and WebSocket events are shared through PostgreSQL
+(`LISTEN/NOTIFY` for events). Without `sari-worker`, MQTT alerts are not ingested.
+
+Local run without Docker: `cd backend && uvicorn app.main:app --port 7000 --workers 2` plus
+`cd backend && python -m app.worker` in another shell (both with the same `.env` and a PostgreSQL
+`DATABASE_URL`). For a single process (development only): `SARI_RUN_BACKGROUND=true uvicorn app.main:app --port 7000`.
 
 ### 4. Acceder al SOC Dashboard
 Abre tu navegador en:
