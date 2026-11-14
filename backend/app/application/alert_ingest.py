@@ -3,7 +3,7 @@
 Steps: find or create the evidence thread, store the evidence message, update the SOC state and
 log, dispatch the Telegram alert with its inline keyboard, raise the siren through the choke point
 as the node actor when the domain policy says so, notify the dashboard and optionally store the
-RAG embedding.
+RAG embedding. Storage steps fail open: a database outage is logged and never stops the siren.
 
 `app.services.alert_ingest` is an alias of this module, so either import path patches the same names.
 """
@@ -48,10 +48,25 @@ TELEGRAM_ALERT_KEYBOARD = {
 
 @dataclass
 class IngestResult:
-    thread_id: int
+    thread_id: Optional[int]  # None when the evidence thread could not be stored
     evidence_text: str
     siren_result: Optional[dict]
     has_snapshot: bool
+
+
+def _fail_open(step: str, fn, *args, db: Optional[Session] = None, **kwargs):
+    """Runs one bookkeeping step; a failure (e.g. the database is down) is logged and skipped so the
+    alarm decision and the siren still happen. Returns None on failure."""
+    try:
+        return fn(*args, **kwargs)
+    except Exception as ex:
+        logger.error("Alert ingest: %s failed (%s); continuing so the alarm is still raised", step, ex)
+        if db is not None:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+        return None
 
 
 def normalize_snapshot(snapshot: Optional[str]) -> Optional[str]:
@@ -102,10 +117,16 @@ def ingest_alert(
     background_tasks=None,
     store_embedding: bool = True,
 ) -> IngestResult:
-    """Runs the alert pipeline. ``node_id`` is the authenticated node the siren actor is bound to."""
-    thread = _evidence_thread(db, module)
-    state.set_last_alert_thread(thread.id)
-    state.record_node_activity(module, ip=node_ip)
+    """Runs the alert pipeline. ``node_id`` is the authenticated node the siren actor is bound to.
+
+    Fail open: every database or notification step is guarded, so a storage outage never prevents
+    the alarm decision and the siren command (the choke point audits and persists on a best-effort basis).
+    """
+    thread = _fail_open("evidence thread", _evidence_thread, db, module, db=db)
+    thread_id = thread.id if thread is not None else None
+    if thread_id is not None:
+        _fail_open("last alert thread", state.set_last_alert_thread, thread_id)
+    _fail_open("node activity", state.record_node_activity, module, ip=node_ip)
 
     timestamp_str = _local_time_str()
     conf_pct = int(confidence * 100)
@@ -113,8 +134,11 @@ def ingest_alert(
         f"⚠️ ALERTA DE EVIDENCIA DESDE MÓDULO JETSON{transport_label} [{timestamp_str}]:\n"
         f"• Dispositivo: {module}\n• Tipo: {event_type} ({severity})\n• Evento: {message}\n• Confianza CV: {conf_pct}%"
     )
-    crud.add_message(db, thread.id, role="system", content=evidence_text, snapshot=snapshot)
-    state.add_log(f"🚨 [{module}] {message} (Conf: {conf_pct}%)", level=alert_log_level(event_type, severity), camera_module="JETSON_CV")
+    if thread_id is not None:
+        _fail_open("evidence message", crud.add_message, db, thread_id, role="system", content=evidence_text,
+                   snapshot=snapshot, db=db)
+    _fail_open("operational log", state.add_log, f"🚨 [{module}] {message} (Conf: {conf_pct}%)",
+               level=alert_log_level(event_type, severity), camera_module="JETSON_CV")
 
     caption = (
         f"🚨 *ALERTA CRÍTICA SARI — PERÍMETRO*\n\n"
@@ -131,16 +155,22 @@ def ingest_alert(
 
     siren_result = None
     if should_raise_alarm(event_type, confidence, SIREN_CONFIDENCE_THRESHOLD):
-        siren_result = execute_physical_tool("activar_sirena", {"duracion_segundos": 30}, actor=Actor.node(node_id))
+        try:
+            siren_result = execute_physical_tool("activar_sirena", {"duracion_segundos": 30}, actor=Actor.node(node_id))
+        except Exception as ex:
+            logger.exception("Alert ingest: siren command raised")
+            siren_result = {"status": "failed", "message": str(ex)}
         if siren_result.get("status") == "success":
-            crud.add_message(db, thread.id, role="system", content=SIREN_STARTED_MSG)
+            if thread_id is not None:
+                _fail_open("siren message", crud.add_message, db, thread_id, role="system", content=SIREN_STARTED_MSG, db=db)
             broadcaster.publish(
-                {"event": "siren_activated", "camara_id": module, "severity": severity, "thread_id": thread.id, "snapshot": snapshot},
+                {"event": "siren_activated", "camara_id": module, "severity": severity, "thread_id": thread_id, "snapshot": snapshot},
                 background_tasks,
                 warn=True,
             )
-        else:
-            crud.add_message(db, thread.id, role="system", content=SIREN_FAILED_MSG.format(detail=siren_result.get("message", "")))
+        elif thread_id is not None:
+            _fail_open("siren failure message", crud.add_message, db, thread_id, role="system",
+                       content=SIREN_FAILED_MSG.format(detail=siren_result.get("message", "")), db=db)
 
     if store_embedding:
         if background_tasks is not None:
@@ -148,4 +178,4 @@ def ingest_alert(
         else:
             save_event_and_embedding(module, message, confidence)
 
-    return IngestResult(thread_id=thread.id, evidence_text=evidence_text, siren_result=siren_result, has_snapshot=bool(snapshot))
+    return IngestResult(thread_id=thread_id, evidence_text=evidence_text, siren_result=siren_result, has_snapshot=bool(snapshot))
