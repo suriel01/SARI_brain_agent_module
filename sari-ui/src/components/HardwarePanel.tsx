@@ -35,6 +35,11 @@ export default function HardwarePanel({ token, permissions, requestPin, state, f
         });
         if (!res.ok) {
           alert(await readErrorDetail(res, 'Error executing hardware action.'));
+        } else {
+          const body = await res.json().catch(() => null);
+          if (body && body.status !== 'success') {
+            alert(body.message || 'Hardware action failed.');
+          }
         }
         fetchState();
       } catch (e) {
@@ -122,7 +127,7 @@ export default function HardwarePanel({ token, permissions, requestPin, state, f
             disabled={!permissions.canControlHardware}
           >
             <Lock size={16} /> 
-            <span>{state?.gates_locked ? t('gatesLocked') : t('gatesUnlocked')}</span>
+            <span>{state?.gates_locked ? t('gatesLocked') : t('gatesUnlocked')}{state?.gates_simulated ? ' (SIM)' : ''}</span>
           </button>
 
         </div>

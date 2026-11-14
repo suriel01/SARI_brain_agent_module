@@ -29,7 +29,7 @@
   │     ├── WebSocket & API REST para SOC Dashboard             │
   │     └── Motor de Integración Bidireccional con Telegram     │
   │                                                             │
-  │   [PostgreSQL 15 + pgvector] (Puerto 5433)                  │
+  │   [PostgreSQL 15 + pgvector] (red interna)                  │
   │     └── Persistencia de chats, usuarios, eventos y nodos    │
   │                                                             │
   │   [Microservicio de Sirena Táctica] (Puerto 5000)           │
@@ -103,7 +103,7 @@
 - **Host (Servidor Central)**:
   - Linux (Ubuntu 22.04 LTS o superior recomendado).
   - [Docker](https://docs.docker.com/get-docker/) y [Docker Compose](https://docs.docker.com/compose/install/).
-  - Puertos libres: `5173` (Frontend), `7000` (Backend API), `1883` (MQTT), `5000` (Sirena), `5433` (PostgreSQL).
+  - Puertos libres: `5173` (Frontend), `7000` (Backend API), `1883`/`8883` (MQTT / MQTT TLS). PostgreSQL y la sirena solo son accesibles dentro de la red Docker (`docker exec -it sari_postgres psql -U sari_user -d sari_db`).
 - **Nodos Periféricos (Módulos Ojos)**:
   - NVIDIA Jetson Orin Nano / Nano / Xavier NX con JetPack.
   - Python 3.8+ con `paho-mqtt`, `psutil` y `requests`.
@@ -141,8 +141,10 @@ Abre tu navegador en:
 👉 **[http://localhost:5173](http://localhost:5173)**
 
 - **Usuario**: `admin`
-- **Contraseña**: `sari_password`
-- **PIN de Seguridad**: `1234`
+- **Contraseña**: el valor de `SARI_ADMIN_PASSWORD` en `.env` (solo se usa para crear el admin la primera vez)
+- **PIN de Seguridad**: el valor de `SARI_SECURITY_PIN` en `.env`
+
+El backend no arranca si faltan `SARI_SECRET_KEY` (32+ caracteres), `SARI_SECURITY_PIN`, `MQTT_USER`, `MQTT_PASSWORD` o `POSTGRES_PASSWORD`.
 
 ---
 
@@ -175,14 +177,12 @@ SARI_brain_agent_module/
 │   └── src/
 │       ├── components/        # Login, Dashboard, ChatPanel, EyesPanel, ControlPanel, UsersPanel
 │       └── i18n/              # Soporte multilingüe (Español / English)
-├── mosquitto/                 # Configuración y credenciales del broker MQTT
-├── specs/                     # Especificaciones técnicas formales (001 a 005)
-│   ├── 001-protocolo-seguridad.md
-│   ├── 002-mqtt-wireless-telemetry.md
-│   ├── 003-eyes-surveillance-module.md
-│   ├── 004-telegram-tactical-integration.md
-│   └── 005-hardware-tamper-autoprotection.md
-├── doc/                       # Documentación de arquitectura, prompts y tareas
+├── mosquitto/                 # Configuración del broker MQTT (passwd se genera localmente)
+├── docs/
+│   ├── SARI_architecture.md   # Arquitectura del sistema
+│   ├── specs/                 # Especificaciones técnicas formales (001 a 005)
+│   └── archive/antigravity/   # Documentos de proceso del flujo anterior (histórico)
+├── odd/tasks/                 # Documentos de feature ODD (specs, tareas, bitácora)
 ├── tests/                     # Suite de pruebas automatizadas (pytest)
 ├── sirena_service.py          # Microservicio emulador de sirena táctica física
 ├── jetson_telemetry.py        # Daemon dual MQTT/HTTP para nodos NVIDIA Jetson

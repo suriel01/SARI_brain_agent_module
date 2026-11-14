@@ -4,13 +4,18 @@ from typing import List, Optional, Dict, Any
 import requests
 import time
 import urllib.parse
+import logging
+import socket
 from ..database import get_db
 from ..models import models
 from ..schemas import schemas
-from .deps import get_current_user
+from .deps import get_current_user, require_hardware_user
+from ..security import require_pin
 from .hardware import HardwareState
+from ..netpolicy import validate_stream_url
 
 router = APIRouter()
+logger = logging.getLogger("sari_eyes")
 
 _tracking_states: Dict[str, bool] = {}
 
@@ -36,20 +41,20 @@ def list_eyes(db: Session = Depends(get_db), current_user: dict = Depends(get_cu
             is_active=eye.is_active,
             created_at=eye.created_at,
             is_online=is_online,
-            fps=live_telemetry.get("fps", 30.0 if is_online else 0.0),
+            fps=live_telemetry.get("fps"),
             ram_used_gb=live_telemetry.get("ram_used_gb"),
             ram_total_gb=live_telemetry.get("ram_total_gb"),
             cpu_load_pct=live_telemetry.get("cpu_load_pct"),
             gpu_load_pct=live_telemetry.get("gpu_load_pct"),
             temp_c=live_telemetry.get("temp_c"),
-            link_status=live_telemetry.get("link_status", "Wi-Fi" if is_online else "Desconectado"),
+            link_status=live_telemetry.get("link_status", None if is_online else "Desconectado"),
             tracking_enabled=_tracking_states.get(eye.node_id, live_telemetry.get("tracking_enabled", True))
         ))
     return results
 
 @router.post("", response_model=schemas.EyeNodeResponse, status_code=status.HTTP_201_CREATED)
 @router.post("/", response_model=schemas.EyeNodeResponse, status_code=status.HTTP_201_CREATED)
-def create_eye(eye_in: schemas.EyeNodeCreate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+def create_eye(eye_in: schemas.EyeNodeCreate, db: Session = Depends(get_db), current_user: dict = Depends(require_hardware_user)):
     existing = db.query(models.EyeNode).filter(models.EyeNode.node_id == eye_in.node_id).first()
     if existing:
         raise HTTPException(status_code=400, detail=f"El nodo Ojo '{eye_in.node_id}' ya existe.")
@@ -80,14 +85,13 @@ def create_eye(eye_in: schemas.EyeNodeCreate, db: Session = Depends(get_db), cur
     )
 
 @router.put("/{node_id}", response_model=schemas.EyeNodeResponse)
-def update_eye(node_id: str, eye_up: schemas.EyeNodeUpdate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+def update_eye(node_id: str, eye_up: schemas.EyeNodeUpdate, db: Session = Depends(get_db), current_user: dict = Depends(require_hardware_user)):
     eye = db.query(models.EyeNode).filter(models.EyeNode.node_id == node_id).first()
     if not eye:
         raise HTTPException(status_code=404, detail="Nodo Ojo no encontrado")
 
     # Security PIN verification for modifying hardware node properties
-    if eye_up.pin and eye_up.pin != "1234":
-        raise HTTPException(status_code=403, detail="PIN de seguridad inválido. Operación rechazada.")
+    require_pin(eye_up.pin, key=f"user:{current_user.get('id')}")
 
     if eye_up.name is not None:
         eye.name = eye_up.name
@@ -143,7 +147,7 @@ def update_eye(node_id: str, eye_up: schemas.EyeNodeUpdate, db: Session = Depend
         is_active=eye.is_active,
         created_at=eye.created_at,
         is_online=is_online,
-        fps=live_telemetry.get("fps", 30.0 if is_online else 0.0),
+        fps=live_telemetry.get("fps"),
         ram_used_gb=live_telemetry.get("ram_used_gb"),
         ram_total_gb=live_telemetry.get("ram_total_gb"),
         cpu_load_pct=live_telemetry.get("cpu_load_pct"),
@@ -153,7 +157,7 @@ def update_eye(node_id: str, eye_up: schemas.EyeNodeUpdate, db: Session = Depend
     )
 
 @router.delete("/{node_id}")
-def delete_eye(node_id: str, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+def delete_eye(node_id: str, db: Session = Depends(get_db), current_user: dict = Depends(require_hardware_user)):
     eye = db.query(models.EyeNode).filter(models.EyeNode.node_id == node_id).first()
     if not eye:
         raise HTTPException(status_code=404, detail="Nodo Ojo no encontrado")
@@ -164,16 +168,29 @@ def delete_eye(node_id: str, db: Session = Depends(get_db), current_user: dict =
     return {"status": "success", "message": f"Nodo Ojo {node_id} eliminado"}
 
 @router.post("/test-connection")
-def test_connection(req: schemas.TestConnectionRequest, current_user: dict = Depends(get_current_user)):
+def test_connection(req: schemas.TestConnectionRequest, current_user: dict = Depends(require_hardware_user)):
     target = req.target_url.strip()
-    if not target.startswith("http://") and not target.startswith("https://"):
+    if "://" not in target:
         target = f"http://{target}"
+    try:
+        validate_stream_url(target)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"Target not allowed: {exc}")
 
     start_t = time.time()
+    parts = urllib.parse.urlsplit(target)
+    if parts.scheme.lower() == "rtsp":
+        try:
+            with socket.create_connection((parts.hostname, parts.port or 554), timeout=2.0):
+                pass
+            return {"reachable": True, "latency_ms": round((time.time() - start_t) * 1000, 1), "content_type": "rtsp"}
+        except OSError:
+            return {"reachable": False, "error": "connection failed", "latency_ms": round((time.time() - start_t) * 1000, 1)}
+
     try:
-        res = requests.get(target, timeout=2.0, stream=True)
+        # No redirects: a node could otherwise bounce the request to a disallowed address.
+        res = requests.get(target, timeout=2.0, stream=True, allow_redirects=False)
         latency_ms = round((time.time() - start_t) * 1000, 1)
-        # Check if ok or redirect or streaming
         reachable = res.status_code in [200, 204, 301, 302]
         return {
             "reachable": reachable,
@@ -183,9 +200,10 @@ def test_connection(req: schemas.TestConnectionRequest, current_user: dict = Dep
         }
     except Exception as e:
         latency_ms = round((time.time() - start_t) * 1000, 1)
+        logger.info("Connection test to %s failed: %s", target, e)
         return {
             "reachable": False,
-            "error": str(e),
+            "error": "connection failed",
             "latency_ms": latency_ms
         }
 
@@ -218,7 +236,7 @@ class PTZPayload(BaseModel):
     zoom_delta: Optional[float] = 0.0
 
 @router.post("/{node_id}/tracking")
-def set_eye_tracking(node_id: str, payload: TrackingPayload, current_user: dict = Depends(get_current_user)):
+def set_eye_tracking(node_id: str, payload: TrackingPayload, current_user: dict = Depends(require_hardware_user)):
     _tracking_states[node_id] = payload.enabled
     if node_id not in HardwareState.nodes:
         HardwareState.nodes[node_id] = {}
@@ -243,7 +261,7 @@ def set_eye_tracking(node_id: str, payload: TrackingPayload, current_user: dict 
     return {"status": "success", "node_id": node_id, "tracking_enabled": payload.enabled}
 
 @router.post("/{node_id}/ptz")
-def send_ptz_command(node_id: str, payload: PTZPayload, current_user: dict = Depends(get_current_user)):
+def send_ptz_command(node_id: str, payload: PTZPayload, current_user: dict = Depends(require_hardware_user)):
     try:
         from ..mqtt.client import get_mqtt_client
         import json

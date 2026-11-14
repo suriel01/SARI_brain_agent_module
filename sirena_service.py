@@ -2,11 +2,14 @@
 """
 sirena_service.py — Microservicio HTTP de Alarma Física & Sirena de Emergencia Real SARI.
 
-Escucha en 0.0.0.0:5000.
+Escucha en 0.0.0.0:5000 dentro de la red interna de Docker (no se publica en el host).
+Toda orden POST requiere la cabecera X-SARI-Siren-Token igual a SARI_SIREN_TOKEN.
 Genera y reproduce un tono físico real de sirena de emergencia (onda modulada de alta intensidad) por altavoces.
 """
 
+import hmac
 import os
+import sys
 import wave
 import math
 import struct
@@ -19,6 +22,9 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 PORT = 5000
 BIND = "0.0.0.0"
 WAV_PATH = "/tmp/sirena_emergencia.wav"
+MAX_DURATION_SECONDS = 300
+TOKEN_HEADER = "X-SARI-Siren-Token"  # noqa: S105 - header name, not a secret
+SIREN_TOKEN = os.environ.get("SARI_SIREN_TOKEN", "").strip()
 
 _sirena_activa = False
 _sirena_lock = threading.Lock()
@@ -143,16 +149,33 @@ class SirenaHTTPHandler(BaseHTTPRequestHandler):
         else:
             self._send_json(404, {"error": "Ruta no encontrada"})
 
+    def _authorized(self) -> bool:
+        supplied = self.headers.get(TOKEN_HEADER, "")
+        return bool(SIREN_TOKEN) and hmac.compare_digest(supplied.encode(), SIREN_TOKEN.encode())
+
     def do_POST(self):
+        if not self._authorized():
+            self._send_json(401, {"error": "No autorizado"})
+            return
         try:
             content_length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(content_length) if content_length > 0 else b"{}"
             payload = json.loads(body.decode("utf-8")) if body else {}
         except (json.JSONDecodeError, ValueError):
             payload = {}
+        if not isinstance(payload, dict):
+            self._send_json(400, {"error": "El cuerpo debe ser un objeto JSON"})
+            return
 
         if self.path == "/api/alarma/activar":
-            duracion = payload.get("duracion", 30)
+            raw = payload.get("duracion", 30)
+            if isinstance(raw, bool) or not isinstance(raw, (int, float)) or not math.isfinite(raw) or raw <= 0:
+                self._send_json(400, {"error": "duracion debe ser un número positivo de segundos"})
+                return
+            duracion = min(int(raw), MAX_DURATION_SECONDS)
+            if duracion <= 0:
+                self._send_json(400, {"error": "duracion debe ser un número positivo de segundos"})
+                return
             _reproducir_alerta(duracion)
             self._send_json(200, {
                 "status": "success",
@@ -173,6 +196,9 @@ class SirenaHTTPHandler(BaseHTTPRequestHandler):
 
 
 def iniciar_servicio():
+    if not SIREN_TOKEN:
+        print("[SIRENA] SARI_SIREN_TOKEN no está definido; el servicio no arranca.")
+        sys.exit(1)
     _generar_wav_sirena_si_no_existe()
     server = HTTPServer((BIND, PORT), SirenaHTTPHandler)
     print(f"[SIRENA] Servicio de audio escuchando en http://{BIND}:{PORT}")

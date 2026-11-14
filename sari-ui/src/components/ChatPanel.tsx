@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Send, Bot, User, MessageSquarePlus, Edit2, Trash2, PanelLeftOpen, PanelLeftClose } from 'lucide-react';
 import { apiFetch, readErrorDetail } from '../api';
+import { realtimeWsUrl } from '../config';
 import type { Permissions } from '../permissions';
 import { useLanguage } from '../i18n/LanguageContext';
 
@@ -250,8 +251,7 @@ export default function ChatPanel({ token, permissions, requestPin, fetchState, 
   }, [lastAlertThreadId]);
 
   useEffect(() => {
-    const wsUrl = window.location.hostname === 'localhost' ? 'ws://localhost:8000/ws' : `ws://${window.location.hostname}:8000/ws`;
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(realtimeWsUrl(token));
 
     ws.onmessage = (event) => {
       try {
@@ -272,7 +272,7 @@ export default function ChatPanel({ token, permissions, requestPin, fetchState, 
     };
 
     return () => ws.close();
-  }, [activeThreadId]);
+  }, [activeThreadId, token]);
 
   useEffect(() => {
     if (activeThreadId) {
@@ -719,7 +719,7 @@ export default function ChatPanel({ token, permissions, requestPin, fetchState, 
           <div ref={endRef} />
         </div>
 
-        {/* Input Bar: Google Antigravity Capsule */}
+        {/* Input Bar: Capsule */}
         <div className="px-6 py-4 flex justify-center border-t border-zinc-200/80 dark:border-zinc-800/80 bg-white/70 dark:bg-zinc-900/70 backdrop-blur-xl z-10 transition-colors">
           <div className="w-full max-w-4xl flex items-center gap-3">
             

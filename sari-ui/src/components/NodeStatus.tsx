@@ -1,6 +1,16 @@
 import { Server, Activity, Radio, Video, Wifi } from 'lucide-react';
 import { useLanguage } from '../i18n/LanguageContext';
 
+const UNKNOWN = '—';
+
+function num(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function show(value: number | null, unit: string, digits = 0): string {
+  return value === null ? UNKNOWN : `${digits ? value.toFixed(digits) : Math.round(value)}${unit}`;
+}
+
 interface NodeStatusProps {
   nodes?: any[];
 }
@@ -10,14 +20,16 @@ export default function NodeStatus({ nodes = [] }: NodeStatusProps) {
   const primaryNode = nodes[0] || null;
   const isOnline = primaryNode ? primaryNode.is_online !== false : false;
 
-  const ramUsed = primaryNode?.ram_used_gb ?? 3.82;
-  const ramTotal = primaryNode?.ram_total_gb ?? 7.44;
-  const ramPct = Math.round((ramUsed / (ramTotal || 7.44)) * 100);
-  const npuLoad = Math.round(primaryNode?.gpu_load_pct ?? 48);
-  const nodeTemp = primaryNode?.temp_c ? Number(primaryNode.temp_c).toFixed(1) : '52.0';
-  const nodeFps = primaryNode?.fps ? Number(primaryNode.fps).toFixed(1) : '30.0';
-  const nodeIp = primaryNode?.ip || '192.168.55.1';
-  const nodeId = primaryNode?.node_id || 'Jetson-PTZ_1';
+  // Unknown values arrive as null and are shown as "—"; nothing is invented (S15).
+  const ramUsed = num(primaryNode?.ram_used_gb);
+  const ramTotal = num(primaryNode?.ram_total_gb);
+  const ramPct = ramUsed !== null && ramTotal ? (ramUsed / ramTotal) * 100 : null;
+  const npuLoad = num(primaryNode?.gpu_load_pct);
+  const nodeTemp = num(primaryNode?.temp_c);
+  const nodeFps = num(primaryNode?.fps);
+  const nodeIp: string = primaryNode?.ip || UNKNOWN;
+  const nodeId: string = primaryNode?.node_id || (language === 'en' ? 'No node reporting' : 'Ningún nodo reportando');
+  const nodeLink: string = primaryNode?.link_status || UNKNOWN;
 
   return (
     <div className="flex flex-col gap-3 w-full">
@@ -50,15 +62,15 @@ export default function NodeStatus({ nodes = [] }: NodeStatusProps) {
           </span>
           <div className="flex items-center gap-2 font-mono font-bold text-xs">
             <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20">
-              {nodeTemp}°C
+              {show(nodeTemp, '°C', 1)}
             </span>
-            <span className="text-zinc-900 dark:text-zinc-100">{npuLoad}%</span>
+            <span className="text-zinc-900 dark:text-zinc-100">{show(npuLoad, '%')}</span>
           </div>
         </div>
         <div className="w-full h-2 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden border border-zinc-200/60 dark:border-zinc-700/60">
           <div 
             className="h-full bg-emerald-500 rounded-full transition-all duration-500 shadow-sm"
-            style={{ width: `${Math.max(npuLoad, 6)}%` }}
+            style={{ width: `${npuLoad === null ? 0 : Math.max(npuLoad, 6)}%` }}
           />
         </div>
       </div>
@@ -71,15 +83,15 @@ export default function NodeStatus({ nodes = [] }: NodeStatusProps) {
             {t('jetsonRam')}
           </span>
           <span className="text-zinc-900 dark:text-zinc-100 font-bold font-mono">
-            {ramUsed} / {ramTotal} GB ({ramPct}%)
+            {show(ramUsed, '', 2)} / {show(ramTotal, ' GB', 2)} ({show(ramPct, '%')})
           </span>
         </div>
         <div className="w-full h-2 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden border border-zinc-200/60 dark:border-zinc-700/60">
           <div 
             className={`h-full rounded-full transition-all duration-500 ${
-              ramPct > 85 ? 'bg-red-500' : ramPct > 70 ? 'bg-amber-500' : 'bg-emerald-500'
+              ramPct === null ? 'bg-zinc-400' : ramPct > 85 ? 'bg-red-500' : ramPct > 70 ? 'bg-amber-500' : 'bg-emerald-500'
             }`}
-            style={{ width: `${Math.max(ramPct, 10)}%` }}
+            style={{ width: `${ramPct === null ? 0 : Math.max(ramPct, 10)}%` }}
           />
         </div>
       </div>
@@ -92,12 +104,12 @@ export default function NodeStatus({ nodes = [] }: NodeStatusProps) {
               <Video size={12} className="text-zinc-400" />
               {language === 'en' ? 'Inference' : 'Inferencia'}
             </span>
-            <span className="font-bold font-mono text-zinc-900 dark:text-zinc-100">{nodeFps} FPS</span>
+            <span className="font-bold font-mono text-zinc-900 dark:text-zinc-100">{show(nodeFps, ' FPS', 1)}</span>
           </div>
           <div className="w-full h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
             <div 
               className="h-full bg-emerald-500 rounded-full transition-all duration-500" 
-              style={{ width: `${Math.min(Number(nodeFps) * 3.3, 100)}%` }} 
+              style={{ width: `${nodeFps === null ? 0 : Math.min(nodeFps * 3.3, 100)}%` }} 
             />
           </div>
         </div>
@@ -108,8 +120,8 @@ export default function NodeStatus({ nodes = [] }: NodeStatusProps) {
               <Wifi size={12} className="text-zinc-400" />
               {t('networkLink')}
             </span>
-            <span className="font-bold font-mono text-[10px] text-zinc-900 dark:text-zinc-100">
-              1Gbps
+            <span className="font-bold font-mono text-[10px] text-zinc-900 dark:text-zinc-100 truncate">
+              {nodeLink}
             </span>
           </div>
           <div className="text-[10px] font-mono text-zinc-600 dark:text-zinc-400 truncate bg-zinc-100 dark:bg-zinc-800/80 px-2 py-0.5 rounded border border-zinc-200/50 dark:border-zinc-700/50">

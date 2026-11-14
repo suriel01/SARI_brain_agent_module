@@ -10,16 +10,81 @@ from typing import Optional, Dict, Any
 
 from .service import get_bot_token, is_chat_allowed, send_telegram_message, send_telegram_alert_photo
 from ..database import SessionLocal
-from ..routers.hardware import HardwareState, execute_physical_tool
+from ..routers.hardware import Actor, HardwareState, execute_physical_tool
 from ..crud import crud
 from ..models import models
+from ..netpolicy import is_allowed_stream_url
 
 logger = logging.getLogger("sari_telegram")
 
 _telegram_polling_active = False
 _telegram_thread: Optional[threading.Thread] = None
 
-SECURITY_PIN = os.environ.get("SARI_SECURITY_PIN", "1234")
+from ..ratelimit import RateLimited
+from ..security import check_pin, pin_matches
+
+PIN_LOCKED_MSG = "⛔ *Demasiados intentos de PIN fallidos.* Intenta de nuevo en 15 minutos."
+
+
+def _chat_pin_ok(pin: str, chat_id: Any) -> Optional[bool]:
+    """PIN check counted per chat. Returns None while the chat is locked out."""
+    try:
+        return check_pin(pin, key=f"telegram:{chat_id}")
+    except RateLimited:
+        return None
+
+
+def _pin_in_text(text: str) -> str:
+    """Only the last numeric token of a free-text message is tried as the PIN (one guess per message)."""
+    digits = [tok for tok in text.split() if tok.isdigit()]
+    return digits[-1] if digits else ""
+
+
+def _redact_pin(text: str) -> str:
+    return " ".join("****" if pin_matches(tok) else tok for tok in text.split())
+
+
+def telegram_actor(chat_id: Any) -> Actor:
+    """Telegram operators may control hardware only from allow-listed chats."""
+    cid = str(chat_id) if chat_id is not None else ""
+    return Actor(name=f"telegram:{cid}", channel="telegram", can_control_hardware=bool(cid) and is_chat_allowed(cid))
+
+
+def _act(tool: str, args: dict, chat_id: Any, success_reply: str) -> str:
+    """Runs a physical action for a Telegram chat; only claims success when the hardware confirmed it."""
+    result = execute_physical_tool(tool, args, actor=telegram_actor(chat_id))
+    if result.get("status") == "success":
+        return success_reply
+    if result.get("status") == "denied":
+        return "⛔ Acción física denegada para este chat."
+    return f"⚠️ *La acción física no pudo completarse*: {result.get('message', '')}"
+
+
+SILENCE_PIN_PROMPT = (
+    "⚠️ *PIN inválido o ausente.*\nPara silenciar la sirena física, ingresa el PIN de seguridad:\n`/silenciar <PIN>`"
+)
+
+
+def handle_telegram_callback(cb_data: str, chat_id: Any) -> Optional[str]:
+    """Handles an inline-button press. Returns the reply to send, or None to stay silent.
+
+    Buttons from chats outside the allowlist are ignored entirely. Raising the alarm stays
+    one-tap (fail-safe); silencing the siren or locking gates needs the PIN via a command.
+    """
+    cid = str(chat_id) if chat_id is not None else ""
+    if not cid or not is_chat_allowed(cid):
+        logger.warning(f"[TELEGRAM] Ignored callback '{cb_data}' from unauthorized chat: {cid or 'unknown'}")
+        return None
+
+    if cb_data in ["btn_siren_activate", "btn_siren"]:
+        return _act("activate_siren", {"duration_seconds": 30}, cid, "🚨 *SIRENA ACTIVADA* vía botón de emergencia.")
+    if cb_data in ["btn_siren_silence", "btn_silence"]:
+        return "🔐 Para silenciar la sirena envía el PIN de seguridad:\n`/silenciar <PIN>`"
+    if cb_data in ["btn_gates_lock", "btn_gates"]:
+        return "🔐 Para operar los portones envía el PIN de seguridad:\n`/portones <PIN>`"
+    if cb_data in ["btn_status"]:
+        return handle_telegram_command("/status", from_chat_id=cid)
+    return None
 
 
 def fetch_node_snapshot(node_id: str, stream_url: Optional[str], db) -> Optional[str]:
@@ -36,14 +101,17 @@ def fetch_node_snapshot(node_id: str, stream_url: Optional[str], db) -> Optional
         urls_to_try.append(f"http://{node_ip}:8080/mjpeg")
 
     for u in urls_to_try:
+        if not is_allowed_stream_url(u):
+            logger.warning(f"[TELEGRAM] Refused snapshot fetch for node {node_id}: address outside the node network policy")
+            continue
         try:
             if "/snapshot" in u:
-                res = requests.get(u, timeout=2.0)
+                res = requests.get(u, timeout=2.0, allow_redirects=False)
                 if res.status_code == 200 and len(res.content) > 1000 and res.content.startswith(b"\xff\xd8"):
                     logger.info(f"[TELEGRAM] Live snapshot captured via {u} ({len(res.content)} bytes)")
                     return f"data:image/jpeg;base64,{base64.b64encode(res.content).decode('utf-8')}"
             else:
-                res = requests.get(u, stream=True, timeout=2.5)
+                res = requests.get(u, stream=True, timeout=2.5, allow_redirects=False)
                 if res.status_code == 200:
                     bytes_data = b""
                     for chunk in res.iter_content(chunk_size=4096):
@@ -96,8 +164,8 @@ def handle_telegram_command(text: str, from_chat_id: Any) -> str:
             "Centro de Comando Táctico Móvil activo y enlazado.\n\n"
             "*Comandos Rápidos Disponibles:*\n"
             "• `/status` - Consulta el estado del perímetro, nodos y hardware.\n"
-            "• `/sirena [PIN]` - Activa la sirena táctica (Requiere PIN `1234`).\n"
-            "• `/silenciar` - Silencia y apaga la sirena táctica.\n"
+            "• `/sirena [PIN]` - Activa la sirena táctica (Requiere PIN de seguridad).\n"
+            "• `/silenciar [PIN]` - Silencia y apaga la sirena táctica (Requiere PIN de seguridad).\n"
             "• `/portones [PIN]` - Bloquea/abre los accesos perimetrales.\n"
             "• `/fotos` o `/foto all` - Envía capturas de todos los módulos Ojos.\n" \
             "• `/foto [id]` - Captura de un módulo específico (ej: `/foto Jetson-PTZ_1`).\n\n"
@@ -112,8 +180,8 @@ def handle_telegram_command(text: str, from_chat_id: Any) -> str:
         nodes_info = []
         for nid, node in HardwareState.nodes.items():
             st = "🟢 ONLINE" if node.get("is_online", True) else "⚪ STANDBY"
-            ip = node.get("ip", "N/A")
-            fps = node.get("fps", 30.0)
+            ip = node.get("ip") or "IP desconocida"
+            fps = node.get("fps") if node.get("fps") is not None else "?"
             nodes_info.append(f"• `{nid}` ({st}): `{ip}` @ {fps} FPS")
         nodes_text = "\n".join(nodes_info) if nodes_info else "• Ningún nodo registrado"
 
@@ -131,28 +199,36 @@ def handle_telegram_command(text: str, from_chat_id: Any) -> str:
     if cmd == "/sirena":
         parts = text.split()
         pin = parts[1] if len(parts) > 1 else ""
-        if pin == SECURITY_PIN:
-            execute_physical_tool("activate_siren", {"duration_seconds": 30})
-            return "🚨 *SIRENA TÁCTICA ACTIVADA* por 30 segundos mediante orden de Telegram."
+        ok = _chat_pin_ok(pin, chat_id_str)
+        if ok is None:
+            return PIN_LOCKED_MSG
+        if ok:
+            return _act("activate_siren", {"duration_seconds": 30}, chat_id_str, "🚨 *SIRENA TÁCTICA ACTIVADA* por 30 segundos mediante orden de Telegram.")
         else:
-            return "⚠️ *PIN inválido o ausente.*\nPara activar la sirena física, ingresa el PIN de seguridad:\n`/sirena 1234`"
+            return "⚠️ *PIN inválido o ausente.*\nPara activar la sirena física, ingresa el PIN de seguridad:\n`/sirena <PIN>`"
 
     if cmd in ["/silenciar", "/apagar_sirena"]:
-        execute_physical_tool("deactivate_siren", {})
-        return "🔊 *Sirena táctica silenciada* y apagada correctamente."
+        pin = parts[1] if len(parts) > 1 else ""
+        ok = _chat_pin_ok(pin, chat_id_str)
+        if ok is None:
+            return PIN_LOCKED_MSG
+        if not ok:
+            return SILENCE_PIN_PROMPT
+        return _act("deactivate_siren", {}, chat_id_str, "🔊 *Sirena táctica silenciada* y apagada correctamente.")
 
     if cmd == "/portones":
         parts = text.split()
         pin = parts[1] if len(parts) > 1 else ""
-        if pin == SECURITY_PIN:
+        ok = _chat_pin_ok(pin, chat_id_str)
+        if ok is None:
+            return PIN_LOCKED_MSG
+        if ok:
             if HardwareState.gates_locked:
-                execute_physical_tool("unlock_gates", {})
-                return "🔓 *Accesos perimetrales desbloqueados* por orden de Telegram."
+                return _act("unlock_gates", {}, chat_id_str, "🔓 *Accesos perimetrales desbloqueados* por orden de Telegram (simulado: sin hardware de portones).")
             else:
-                execute_physical_tool("lock_gates", {})
-                return "🔒 *Accesos perimetrales bloqueados* de emergencia por orden de Telegram."
+                return _act("lock_gates", {}, chat_id_str, "🔒 *Accesos perimetrales bloqueados* de emergencia por orden de Telegram (simulado: sin hardware de portones).")
         else:
-            return "⚠️ *PIN inválido o ausente.*\nUso: `/portones 1234`"
+            return "⚠️ *PIN inválido o ausente.*\nUso: `/portones <PIN>`"
 
     if cmd in ["/foto", "/fotos", "/snapshot", "/captura", "/capturas"]:
         target_arg = parts[1].strip() if len(parts) > 1 else ""
@@ -176,7 +252,7 @@ def handle_telegram_command(text: str, from_chat_id: Any) -> str:
                 for n_id in valid_node_ids:
                     eye = node_map.get(n_id)
                     name = eye.name if eye else HardwareState.nodes.get(n_id, {}).get("name", n_id)
-                    ip = eye.ip if eye else HardwareState.nodes.get(n_id, {}).get("ip", "192.168.55.1")
+                    ip = eye.ip if eye else HardwareState.nodes.get(n_id, {}).get("ip") or "IP desconocida"
                     stream_url = eye.stream_url if eye else None
                     hw_node = HardwareState.nodes.get(n_id, {})
                     is_online = hw_node.get("is_online", True) if n_id in HardwareState.nodes else (eye.is_active if eye else True)
@@ -213,7 +289,7 @@ def handle_telegram_command(text: str, from_chat_id: Any) -> str:
 
                 eye = node_map.get(matched_node_id)
                 name = eye.name if eye else HardwareState.nodes.get(matched_node_id, {}).get("name", matched_node_id)
-                ip = eye.ip if eye else HardwareState.nodes.get(matched_node_id, {}).get("ip", "192.168.55.1")
+                ip = eye.ip if eye else HardwareState.nodes.get(matched_node_id, {}).get("ip") or "IP desconocida"
                 stream_url = eye.stream_url if eye else None
 
                 snapshot = fetch_node_snapshot(matched_node_id, stream_url, db)
@@ -234,7 +310,7 @@ def handle_telegram_command(text: str, from_chat_id: Any) -> str:
 
             eye = node_map.get(target_node_id)
             name = eye.name if eye else HardwareState.nodes.get(target_node_id, {}).get("name", target_node_id)
-            ip = eye.ip if eye else HardwareState.nodes.get(target_node_id, {}).get("ip", "192.168.55.1")
+            ip = eye.ip if eye else HardwareState.nodes.get(target_node_id, {}).get("ip") or "IP desconocida"
             stream_url = eye.stream_url if eye else None
             snapshot = fetch_node_snapshot(target_node_id, stream_url, db)
             if snapshot:
@@ -277,21 +353,28 @@ def process_natural_language_query(query: str, chat_id: str) -> str:
         if not thread:
             thread = crud.create_thread(db, user_id=user_id, title="🤖 Telegram Operator Chat")
 
-        crud.add_message(db, thread.id, role="user", content=f"[Telegram {chat_id}]: {query}")
+        crud.add_message(db, thread.id, role="user", content=f"[Telegram {chat_id}]: {_redact_pin(query)}")
 
         q_lower = query.lower()
         if any(w in q_lower for w in ["activa la sirena", "activar sirena", "enciende la alarma", "prende la alarma"]):
-            if SECURITY_PIN in query:
-                execute_physical_tool("activate_siren", {"duration_seconds": 30})
-                reply = "🚨 Entendido. Sirena táctica perimetral activada por 30 segundos."
+            ok = _chat_pin_ok(_pin_in_text(query), chat_id)
+            if ok is None:
+                reply = PIN_LOCKED_MSG
+            elif ok:
+                reply = _act("activate_siren", {"duration_seconds": 30}, chat_id, "🚨 Entendido. Sirena táctica perimetral activada por 30 segundos.")
             else:
-                reply = "⚠️ Para activar la sirena física por seguridad debes incluir tu PIN (ej: 'activa la sirena 1234' o `/sirena 1234`)."
+                reply = "⚠️ Para activar la sirena física por seguridad debes incluir tu PIN (ej: 'activa la sirena <PIN>' o `/sirena <PIN>`)."
             crud.add_message(db, thread.id, role="agent", content=reply)
             return reply
 
         if any(w in q_lower for w in ["apaga la sirena", "silencia la sirena", "apagar alarma", "silenciar"]):
-            execute_physical_tool("deactivate_siren", {})
-            reply = "🔊 Sirena táctica apagada y silenciada."
+            ok = _chat_pin_ok(_pin_in_text(query), chat_id)
+            if ok is None:
+                reply = PIN_LOCKED_MSG
+            elif ok:
+                reply = _act("deactivate_siren", {}, chat_id, "🔊 Sirena táctica apagada y silenciada.")
+            else:
+                reply = "⚠️ Para silenciar la sirena física por seguridad debes incluir tu PIN (ej: 'apaga la sirena <PIN>' o `/silenciar <PIN>`)."
             crud.add_message(db, thread.id, role="agent", content=reply)
             return reply
 
@@ -365,18 +448,9 @@ def _polling_worker():
 
                         requests.post(f"https://api.telegram.org/bot{token}/answerCallbackQuery", json={"callback_query_id": cb_id}, timeout=3.0)
 
-                        if cb_data in ["btn_siren_activate", "btn_siren"]:
-                            execute_physical_tool("activate_siren", {"duration_seconds": 30})
-                            send_telegram_message("🚨 *SIRENA ACTIVADA* vía botón de emergencia.", chat_id=str(chat_id))
-                        elif cb_data in ["btn_siren_silence", "btn_silence"]:
-                            execute_physical_tool("deactivate_siren", {})
-                            send_telegram_message("🔊 *SIRENA SILENCIADA* vía botón de control.", chat_id=str(chat_id))
-                        elif cb_data in ["btn_gates_lock", "btn_gates"]:
-                            execute_physical_tool("lock_gates", {})
-                            send_telegram_message("🔒 *PORTONES BLOQUEADOS* vía botón de control.", chat_id=str(chat_id))
-                        elif cb_data in ["btn_status"]:
-                            status_msg = handle_telegram_command("/status", from_chat_id=chat_id)
-                            send_telegram_message(status_msg, chat_id=str(chat_id))
+                        cb_reply = handle_telegram_callback(cb_data, chat_id)
+                        if cb_reply:
+                            send_telegram_message(cb_reply, chat_id=str(chat_id))
 
             time.sleep(1.0)
         except Exception as e:

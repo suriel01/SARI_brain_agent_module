@@ -4,31 +4,79 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+from .config import ConfigError, KNOWN_INSECURE_VALUES, get_settings
 from .database import engine, SessionLocal
+
+# Fail closed: refuse to start without the required security settings.
+get_settings()
 from .models import models
 from .schemas import schemas
 from .crud import crud
 from .routers import auth, chat, hardware, users, alerts, eyes
 
-from sqlalchemy import text
+from pathlib import Path
 
-# Habilitar extensión pgvector ANTES de crear tablas
-with engine.connect() as conn:
-    conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-    conn.commit()
+from sqlalchemy import inspect, text
 
-# Crear tablas
-models.Base.metadata.create_all(bind=engine)
+logger = logging.getLogger("sari_db")
 
-# Auto-migration de columnas para la tabla users DESPUES de crear tablas
-with engine.connect() as conn:
-    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_create_chats BOOLEAN DEFAULT FALSE;"))
-    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_delete_chats BOOLEAN DEFAULT FALSE;"))
-    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_rename_chats BOOLEAN DEFAULT FALSE;"))
-    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_control_hardware BOOLEAN DEFAULT FALSE;"))
-    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_manage_users BOOLEAN DEFAULT FALSE;"))
-    conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS snapshot TEXT;"))
-    conn.commit()
+# backend/migrations locally, /app/migrations in the image: always next to the `app` package.
+MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
+
+_LEGACY_POSTGRES_PATCHES = (
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS can_create_chats BOOLEAN DEFAULT FALSE;",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS can_delete_chats BOOLEAN DEFAULT FALSE;",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS can_rename_chats BOOLEAN DEFAULT FALSE;",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS can_control_hardware BOOLEAN DEFAULT FALSE;",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS can_manage_users BOOLEAN DEFAULT FALSE;",
+    "ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS snapshot TEXT;",
+)
+
+
+def alembic_config():
+    from alembic.config import Config
+
+    cfg = Config()
+    cfg.set_main_option("script_location", str(MIGRATIONS_DIR))
+    return cfg
+
+
+def _adopt_legacy_schema(connection) -> None:
+    """Brings a pre-Alembic database (built by ``create_all``) up to the baseline without touching data.
+
+    Only additive statements: missing tables are created and missing columns added; nothing is
+    dropped or altered.
+    """
+    if connection.dialect.name == "postgresql":
+        connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+    models.Base.metadata.create_all(bind=connection, checkfirst=True)
+    if connection.dialect.name == "postgresql":
+        for statement in _LEGACY_POSTGRES_PATCHES:
+            connection.execute(text(statement))
+
+
+def init_db(bind=None) -> None:
+    """Applies the schema through Alembic.
+
+    - Existing deployment (app tables but no ``alembic_version``): legacy additive patches once, then
+      ``stamp head``. Data is never dropped or rewritten.
+    - Otherwise (fresh or already versioned database): ``upgrade head``.
+    """
+    from alembic import command
+
+    bind = bind if bind is not None else engine
+    cfg = alembic_config()
+    with bind.begin() as connection:
+        cfg.attributes["connection"] = connection
+        tables = set(inspect(connection).get_table_names())
+        app_tables = tables & set(models.Base.metadata.tables)
+        if app_tables and "alembic_version" not in tables:
+            logger.warning("Database has no alembic_version: adopting the existing schema and stamping head")
+            _adopt_legacy_schema(connection)
+            command.stamp(cfg, "head")
+        else:
+            command.upgrade(cfg, "head")
+
 
 app = FastAPI(title="SARI Brain Agent Backend")
 
@@ -54,17 +102,19 @@ else:
         allow_headers=["*"],
     )
 
-# Seed Admin User y Hilo Inicial
-@app.on_event("startup")
-def startup_event():
+def seed_initial_data() -> None:
+    """Seed the bootstrap admin, default thread and default eye node. Admin password comes from SARI_ADMIN_PASSWORD."""
     db = SessionLocal()
     try:
         admin = crud.get_user_by_username(db, "admin")
         if not admin:
+            bootstrap_password = os.environ.get("SARI_ADMIN_PASSWORD", "").strip()
+            if not bootstrap_password or bootstrap_password in KNOWN_INSECURE_VALUES:
+                raise ConfigError("SARI_ADMIN_PASSWORD is required to create the initial admin user")
             admin_user = schemas.UserCreate(
-                username="admin", 
-                password="sari_password", 
-                role="admin", 
+                username="admin",
+                password=bootstrap_password,
+                role="admin",
                 clearance_level=5
             )
             admin = crud.create_user(db, admin_user)
@@ -92,6 +142,14 @@ def startup_event():
             print("Default Jetson-PTZ_1 eye node registered")
     finally:
         db.close()
+
+
+@app.on_event("startup")
+def startup_event():
+    init_db()
+    seed_initial_data()
+    # Logged only after the schema step and the seed queries actually succeeded (S15).
+    hardware.HardwareState.add_log("🔐 Database reachable; schema at the latest migration.", level="INFO", camera_module="SYS_CORE")
 
     # Iniciar cliente MQTT en segundo plano
     try:
@@ -138,11 +196,18 @@ app.include_router(eyes.router, prefix="/api/eyes", tags=["eyes"])
 app.include_router(hardware.router, prefix="/api", tags=["hardware"])
 
 from .ws import manager
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
+from .routers.deps import authenticate_token
 
 @app.websocket("/ws")
 @app.websocket("/")
 async def websocket_endpoint(websocket: WebSocket):
+    # Browsers cannot set headers on a WebSocket handshake, so the JWT comes as ?token=.
+    try:
+        authenticate_token(websocket.query_params.get("token", ""))
+    except HTTPException:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
     await manager.connect(websocket)
     try:
         while True:

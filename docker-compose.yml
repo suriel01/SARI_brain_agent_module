@@ -6,7 +6,6 @@ services:
     container_name: sari-backend
     ports:
       - "7000:7000"
-      - "8000:7000"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     deploy:
@@ -18,24 +17,29 @@ services:
               capabilities: [gpu]
     volumes:
       - ./backend/app:/app/app
+      - ./backend/migrations:/app/migrations
       - ./tests:/app/tests
     environment:
       - PORT=7000
       - OLLAMA_URL=http://host.docker.internal:11434/api/chat
       - OLLAMA_MODEL=qwen2.5:7b
       - SIRENA_SERVICE_URL=http://sari-sirena:5000
-      - DATABASE_URL=postgresql://sari_user:sari_password@postgres_db:5432/sari_db
+      - SARI_SIREN_TOKEN=${SARI_SIREN_TOKEN:?set SARI_SIREN_TOKEN in .env}
+      - SARI_NODE_KEYS=${SARI_NODE_KEYS:-}
+      - DATABASE_URL=postgresql+psycopg2://sari_user:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres_db:5432/sari_db
       - OPENAI_API_BASE=http://host.docker.internal:11434/v1
       - OPENAI_BASE_URL=http://host.docker.internal:11434/v1
       - OPENAI_API_KEY=ollama
-      - SARI_SECRET_KEY=SARI_SUPER_SECRET_KEY
-      - SARI_SECURITY_PIN=1234
-      - SARI_TOKEN_EXPIRE_MINUTES=720
+      - SARI_SECRET_KEY=${SARI_SECRET_KEY:?set SARI_SECRET_KEY in .env}
+      - SARI_SECURITY_PIN=${SARI_SECURITY_PIN:?set SARI_SECURITY_PIN in .env}
+      - SARI_ADMIN_PASSWORD=${SARI_ADMIN_PASSWORD:-}
+      - SARI_TOKEN_EXPIRE_MINUTES=${SARI_TOKEN_EXPIRE_MINUTES:-60}
       - CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
       - MQTT_BROKER_HOST=sari-mqtt
       - MQTT_BROKER_PORT=1883
-      - MQTT_USER=sari_operator
-      - MQTT_PASSWORD=sari_secure_password_2026
+      - MQTT_USER=${MQTT_USER:?set MQTT_USER in .env}
+      - MQTT_PASSWORD=${MQTT_PASSWORD:?set MQTT_PASSWORD in .env}
+      - SARI_MQTT_LEGACY_ALERTS=${SARI_MQTT_LEGACY_ALERTS:-true}
       - TZ=America/Mexico_City
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_ALLOWED_CHAT_IDS=${TELEGRAM_ALLOWED_CHAT_IDS:-}
@@ -51,9 +55,11 @@ services:
     image: eclipse-mosquitto:2.0
     container_name: sari-mqtt
     ports:
-      - "1883:1883"
+      - "1883:1883"  # plain MQTT, kept during the TLS transition
+      - "8883:8883"  # MQTT over TLS, active once conf.d/tls.conf exists
     volumes:
       - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/certs:/mosquitto/certs
       - ./mosquitto/data:/mosquitto/data
       - ./mosquitto/log:/mosquitto/log
     restart: unless-stopped
@@ -63,13 +69,20 @@ services:
       context: .
       dockerfile: Dockerfile.sirena
     container_name: sari-sirena
-    ports:
-      - "5000:5000"
+    # Internal only: reachable by sari-backend on sari-network, not published on the host.
+    expose:
+      - "5000"
+    # Unprivileged; the host user's PulseAudio socket and cookie are mounted read-only.
+    user: "1000:1000"
+    group_add:
+      - audio
     environment:
+      - SARI_SIREN_TOKEN=${SARI_SIREN_TOKEN:?set SARI_SIREN_TOKEN in .env}
       - PULSE_SERVER=unix:/run/user/1000/pulse/native
+      - PULSE_COOKIE=/home/sari/.config/pulse/cookie
     volumes:
-      - /run/user/1000/pulse/native:/run/user/1000/pulse/native
-      - /home/surielalcantara/.config/pulse/cookie:/root/.config/pulse/cookie
+      - ${XDG_RUNTIME_DIR:-/run/user/1000}/pulse/native:/run/user/1000/pulse/native
+      - ${HOME}/.config/pulse/cookie:/home/sari/.config/pulse/cookie:ro
     devices:
       - "/dev/snd:/dev/snd"
     restart: unless-stopped
@@ -80,7 +93,7 @@ services:
       dockerfile: Dockerfile
     container_name: sari-ui
     ports:
-      - "5173:80"
+      - "5173:8080"
     restart: unless-stopped
 
   postgres_db:
@@ -88,10 +101,10 @@ services:
     container_name: sari_postgres
     environment:
       POSTGRES_USER: sari_user
-      POSTGRES_PASSWORD: sari_password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: sari_db
-    ports:
-      - "5433:5432"
+    # Not published on the host: only reachable on sari-network.
+    # For local inspection use: docker exec -it sari_postgres psql -U sari_user -d sari_db
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

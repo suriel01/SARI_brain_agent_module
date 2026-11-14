@@ -7,28 +7,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python requirements
-RUN pip install --no-cache-dir \
-    fastapi \
-    uvicorn \
-    requests \
-    pyjwt \
-    pydantic \
-    sqlalchemy \
-    psycopg2-binary \
-    passlib \
-    bcrypt \
-    pgvector \
-    mcp \
-    nemoguardrails \
-    psutil \
-    pynvml \
-    paho-mqtt \
-    websockets \
-    pytest
+# Install Python requirements (pinned)
+COPY backend/requirements.txt backend/requirements-dev.txt /tmp/req/
+RUN pip install --no-cache-dir -r /tmp/req/requirements-dev.txt
 
 # Copy project files
 COPY backend/app /app/app
+COPY backend/alembic.ini /app/alembic.ini
+COPY backend/migrations /app/migrations
+
+# Run unprivileged (no write access to the application code)
+RUN useradd --uid 10001 --create-home --shell /usr/sbin/nologin sari
+USER sari
 
 EXPOSE 7000
 

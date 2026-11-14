@@ -1,21 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
-import datetime
-import requests
-import os
 
-from ..database import get_db, SessionLocal
-from ..crud import crud
-from .hardware import execute_physical_tool, HardwareState
-from ..telegram.service import send_telegram_alert_photo
+from ..database import get_db
+from ..node_auth import require_node
+from ..services.alert_ingest import ingest_alert, normalize_snapshot
+from .deps import get_current_user
 
 router = APIRouter()
-
-OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/chat")
-OLLAMA_EMBED_URL = OLLAMA_URL.replace("/api/chat", "/api/embeddings")
-OLLAMA_EMBED_MODEL = "nomic-embed-text"
 
 class AlertEventRequest(BaseModel):
     module_name: Optional[str] = "Jetson-PTZ_1"
@@ -30,45 +23,12 @@ class AlertEventRequest(BaseModel):
     metadata: Optional[dict] = {}
 
 from ..models import models
-from ..ws import manager
 
-def save_event_and_embedding(module_name: str, event_desc: str, confidence: float):
-    # Generar embedding asíncronamente
-    embedding = None
-    try:
-        res = requests.post(OLLAMA_EMBED_URL, json={
-            "model": OLLAMA_EMBED_MODEL,
-            "prompt": f"[{module_name}] {event_desc}"
-        }, timeout=10.0)
-        if res.status_code == 200:
-            embedding = res.json().get("embedding")
-    except Exception as e:
-        print(f"Error generando embedding: {e}")
-
-    # Guardar en base de datos con una nueva sesión
-    db = SessionLocal()
-    try:
-        new_event = models.EventLog(
-            module_name=module_name,
-            event_description=event_desc,
-            confidence=confidence,
-            embedding=embedding
-        )
-        db.add(new_event)
-        db.commit()
-    except Exception as e:
-        print(f"Error guardando evento: {e}")
-        db.rollback()
-    finally:
-        db.close()
-
-
-import time
 
 @router.get("/event")
 @router.get("/event/")
 @router.get("/")
-def get_alerts_status_and_logs(db: Session = Depends(get_db)):
+def get_alerts_status_and_logs(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     """Endpoint GET para consultar el estado del receptor de alertas y ver el historial de detecciones."""
     db_events = db.query(models.EventLog).order_by(models.EventLog.timestamp.desc()).limit(20).all()
     events_list = [
@@ -99,120 +59,29 @@ def get_alerts_status_and_logs(db: Session = Depends(get_db)):
 @router.post("/alerta")
 @router.post("/alertas")
 @router.post("/")
-def receive_alert_event(req: AlertEventRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    admin_user = crud.get_user_by_username(db, "admin")
-    user_id = admin_user.id if admin_user else 1
-
-    module_clean = req.camara_id or req.module_name or "Jetson-PTZ_1"
-    target_title = f"🚨 [EVIDENCIA] {module_clean}"
-    
-    # Reutilizar o crear hilo
-    thread = db.query(models.ChatThread).filter(
-        models.ChatThread.title.ilike(f"%{module_clean}%")
-    ).order_by(models.ChatThread.id.desc()).first()
-
-    if not thread:
-        thread = crud.create_thread(db, user_id=user_id, title=target_title)
-    else:
-        thread.created_at = datetime.datetime.utcnow()
-        db.commit()
-        db.refresh(thread)
-    
-    HardwareState.last_alert_thread_id = thread.id
-    HardwareState.record_node_activity(module_clean, ip="192.168.55.1")
-    
-    # Obtener hora local (America/Mexico_City / UTC-6)
-    try:
-        import zoneinfo
-        local_now = datetime.datetime.now(zoneinfo.ZoneInfo("America/Mexico_City"))
-    except Exception:
-        local_now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-6)))
-    
-    timestamp_str = local_now.strftime("%I:%M:%S %p")
-    
-    # Resolver nivel de confianza
+def receive_alert_event(req: AlertEventRequest, background_tasks: BackgroundTasks, request: Request, db: Session = Depends(get_db), node_id: str = Depends(require_node)):
     conf = req.confidence
     if conf is None and req.metadata:
         conf = float(req.metadata.get("confidence", 0.90))
     if conf is None:
         conf = 0.90
 
-    # Normalizar snapshot fotográfico en formato Data URL Base64
-    final_snapshot = req.snapshot
-    if not final_snapshot and req.image_base64:
-        if req.image_base64.startswith("data:image"):
-            final_snapshot = req.image_base64
-        else:
-            final_snapshot = f"data:image/jpeg;base64,{req.image_base64}"
-    elif final_snapshot and not final_snapshot.startswith("data:image"):
-        final_snapshot = f"data:image/jpeg;base64,{final_snapshot}"
-
-    evidence_text = f"⚠️ ALERTA DE EVIDENCIA DESDE MÓDULO JETSON [{timestamp_str}]:\n• Dispositivo: {module_clean}\n• Tipo: {req.event_type} ({req.severity})\n• Evento: {req.message}\n• Confianza CV: {int(conf*100)}%"
-    
-    # Guardar mensaje con captura fotográfica
-    crud.add_message(db, thread.id, role="system", content=evidence_text, snapshot=final_snapshot)
-
-    # Registrar inmediatamente en los logs de auditoría del SOC (Hardware Control)
-    log_level = "ERROR" if req.severity == "high" or req.event_type == "intrusion" else "WARN" if req.severity == "medium" else "INFO"
-    HardwareState.add_log(
-        msg=f"🚨 [{module_clean}] {req.message} (Conf: {int(conf*100)}%)",
-        level=log_level,
-        camera_module="JETSON_CV"
+    result = ingest_alert(
+        db,
+        node_id=node_id,
+        module=req.camara_id or req.module_name or "Jetson-PTZ_1",
+        event_type=req.event_type,
+        severity=req.severity,
+        message=req.message,
+        confidence=conf,
+        snapshot=normalize_snapshot(req.snapshot or req.image_base64),
+        node_ip=request.client.host if request.client else None,
+        background_tasks=background_tasks,
     )
-
-    # Dispatch to Telegram
-    telegram_caption = (
-        f"🚨 *ALERTA CRÍTICA SARI — PERÍMETRO*\n\n"
-        f"• *Nodo*: `{module_clean}`\n"
-        f"• *Evento*: {req.message}\n"
-        f"• *Severidad*: `{req.severity.upper()}`\n"
-        f"• *Confianza CV*: `{int(conf*100)}%`\n"
-        f"• *Hora*: `{timestamp_str}`"
-    )
-    telegram_buttons = {
-        "inline_keyboard": [
-            [
-                {"text": "🚨 Activar Sirena 30s", "callback_data": "btn_siren_activate"},
-                {"text": "🔒 Bloquear Accesos", "callback_data": "btn_gates_lock"}
-            ],
-            [
-                {"text": "🔊 Silenciar Alarma", "callback_data": "btn_silence"},
-                {"text": "📊 Ver Estado", "callback_data": "btn_status"}
-            ]
-        ]
-    }
-    try:
-        send_telegram_alert_photo(final_snapshot, caption=telegram_caption, reply_markup=telegram_buttons)
-    except Exception as ex_tg:
-        print(f"[HTTP->Telegram] Error delivering alert photo: {ex_tg}")
-
-    siren_response = None
-    if req.event_type == "intrusion" and conf >= 0.70:
-        HardwareState.siren_active = True
-        HardwareState.alert_count += 1
-        HardwareState.last_alert_time = time.time()
-        
-        siren_response = execute_physical_tool("activar_sirena", {"duracion_segundos": 30})
-        crud.add_message(db, thread.id, role="system", content="🔊 Respuesta física iniciada: Sirena activada por 30s mediante orden automática.")
-        
-        # Broadcast the siren state to React via Websocket
-        background_tasks.add_task(manager.broadcast_json, {
-            "event": "siren_activated",
-            "camara_id": module_clean,
-            "severity": req.severity,
-            "thread_id": thread.id,
-            "snapshot": final_snapshot
-        })
-
-    # Tarea en segundo plano para guardar vector de memoria
-    background_tasks.add_task(save_event_and_embedding, module_clean, req.message, conf)
-
     return {
         "status": "success",
-        "thread_id": thread.id,
-        "evidence_log": evidence_text,
-        "siren_result": siren_response,
-        "has_snapshot": bool(final_snapshot)
+        "thread_id": result.thread_id,
+        "evidence_log": result.evidence_text,
+        "siren_result": result.siren_result,
+        "has_snapshot": result.has_snapshot,
     }
-
-

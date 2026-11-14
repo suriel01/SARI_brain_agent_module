@@ -1,15 +1,12 @@
 import json
 import logging
 import time
-import datetime
-from typing import Dict, Any
+from typing import Optional
 
+from ..config import get_settings
 from ..database import SessionLocal
-from ..routers.hardware import HardwareState, execute_physical_tool
-from ..crud import crud
-from ..models import models
-from ..ws import manager
-from ..telegram.service import send_telegram_alert_photo
+from ..routers.hardware import NODE_TELEMETRY_FIELDS, HardwareState
+from ..services.alert_ingest import ingest_alert, normalize_snapshot
 from ..telegram.watchdog import reset_node_connection_state, trigger_node_disconnection_alert
 
 logger = logging.getLogger("sari_mqtt")
@@ -19,19 +16,21 @@ def handle_telemetry_message(topic: str, payload_str: str):
     try:
         data = json.loads(payload_str)
         parts = topic.split("/")
-        node_id = data.get("node_id") or (parts[2] if len(parts) >= 3 else "Jetson-PTZ_1")
+        topic_node = parts[2] if len(parts) >= 4 and parts[0] == "sari" and parts[1] == "nodes" else None
+        if not topic_node:
+            logger.warning(f"[MQTT] Ignoring message on unexpected topic {topic}")
+            return
+        payload_node = data.get("node_id")
+        if payload_node and payload_node != topic_node:
+            logger.warning(f"[MQTT] Ignoring {topic}: payload node_id does not match the topic node")
+            return
+        node_id = topic_node
         
         HardwareState.nodes[node_id] = {
             "node_id": node_id,
             "name": data.get("name", f"Jetson Node ({node_id})"),
-            "ip": data.get("ip", "192.168.1.73"),
-            "ram_used_gb": data.get("ram_used_gb", 3.8),
-            "ram_total_gb": data.get("ram_total_gb", 7.44),
-            "cpu_load_pct": data.get("cpu_load_pct", 30.0),
-            "gpu_load_pct": data.get("gpu_load_pct", 50.0),
-            "temp_c": data.get("temp_c", 50.0),
-            "fps": data.get("fps", 30.0),
-            "link_status": data.get("link_status", "Wi-Fi (1Gbps)"),
+            "ip": data.get("ip"),
+            **{field: data.get(field) for field in NODE_TELEMETRY_FIELDS},
             "last_seen": time.time(),
             "is_online": True
         }
@@ -45,7 +44,15 @@ def handle_status_message(topic: str, payload_str: str):
     try:
         data = json.loads(payload_str) if payload_str else {}
         parts = topic.split("/")
-        node_id = data.get("node_id") or (parts[2] if len(parts) >= 3 else "Jetson-PTZ_1")
+        topic_node = parts[2] if len(parts) >= 4 and parts[0] == "sari" and parts[1] == "nodes" else None
+        if not topic_node:
+            logger.warning(f"[MQTT] Ignoring message on unexpected topic {topic}")
+            return
+        payload_node = data.get("node_id")
+        if payload_node and payload_node != topic_node:
+            logger.warning(f"[MQTT] Ignoring {topic}: payload node_id does not match the topic node")
+            return
+        node_id = topic_node
         status = str(data.get("status", "offline")).lower()
 
         if status == "online":
@@ -58,7 +65,7 @@ def handle_status_message(topic: str, payload_str: str):
                 HardwareState.nodes[node_id] = {
                     "node_id": node_id,
                     "name": f"Jetson Node ({node_id})",
-                    "ip": data.get("ip", "192.168.1.73"),
+                    "ip": data.get("ip"),
                     "last_seen": time.time(),
                     "is_online": True
                 }
@@ -76,108 +83,72 @@ def handle_status_message(topic: str, payload_str: str):
     except Exception as e:
         logger.error(f"[MQTT] Error handling status/LWT: {e}")
 
-def handle_alert_message(payload_str: str):
-    """Handles critical intrusion alerts from sari/alerts with Base64 snapshot"""
+LEGACY_ALERT_TOPIC = "sari/alerts"
+
+
+def node_id_from_topic(topic: str, kind: str) -> Optional[str]:
+    """Returns the node id of ``sari/nodes/<id>/<kind>`` or None when the topic has another shape."""
+    parts = topic.split("/")
+    if len(parts) != 4 or parts[0] != "sari" or parts[1] != "nodes" or parts[3] != kind:
+        return None
+    node_id = parts[2]
+    if not node_id or node_id in {"+", "#"}:
+        return None
+    return node_id
+
+
+def route_message(topic: str, payload_str: str, legacy_alerts: Optional[bool] = None) -> None:
+    """Single MQTT entry point.
+
+    Alerts on ``sari/nodes/<id>/alerts`` are bound to ``<id>``: the broker ACL only lets user ``<id>``
+    publish there, so the topic (not the payload) identifies the node. The shared ``sari/alerts``
+    topic is accepted only while ``SARI_MQTT_LEGACY_ALERTS`` is on.
+    """
+    if legacy_alerts is None:
+        legacy_alerts = get_settings().mqtt_legacy_alerts
+
+    alert_node = node_id_from_topic(topic, "alerts")
+    if alert_node is not None:
+        handle_alert_message(payload_str, node_id=alert_node)
+    elif topic == LEGACY_ALERT_TOPIC:
+        if legacy_alerts:
+            handle_alert_message(payload_str)
+        else:
+            logger.warning("[MQTT] Ignored alert on legacy topic %s (SARI_MQTT_LEGACY_ALERTS is off)", topic)
+    elif topic.endswith("/alerts"):
+        logger.warning("[MQTT] Ignored alert on malformed topic %s", topic)
+    elif "/telemetry" in topic:
+        handle_telemetry_message(topic, payload_str)
+    elif "/status" in topic:
+        handle_status_message(topic, payload_str)
+    else:
+        logger.info(f"[MQTT] Message received on unhandled topic: {topic}")
+
+
+def handle_alert_message(payload_str: str, node_id: Optional[str] = None):
+    """Handles intrusion alerts (Base64 snapshot included).
+
+    ``node_id`` comes from the per-node topic and is the siren actor. Without it (legacy
+    ``sari/alerts``) the actor is the node named in the payload, which the broker cannot verify.
+    """
     db = SessionLocal()
     try:
         data = json.loads(payload_str)
-        module_clean = data.get("camara_id") or data.get("module_name") or "Jetson-PTZ_1"
-        target_title = f"🚨 [EVIDENCIA] {module_clean}"
-
-        admin_user = crud.get_user_by_username(db, "admin")
-        user_id = admin_user.id if admin_user else 1
-
-        thread = db.query(models.ChatThread).filter(
-            models.ChatThread.title.ilike(f"%{module_clean}%")
-        ).order_by(models.ChatThread.id.desc()).first()
-
-        if not thread:
-            thread = crud.create_thread(db, user_id=user_id, title=target_title)
-        else:
-            thread.created_at = datetime.datetime.utcnow()
-            db.commit()
-            db.refresh(thread)
-
-        HardwareState.last_alert_thread_id = thread.id
-        HardwareState.record_node_activity(module_clean, ip=data.get("ip", "192.168.1.73"))
-
-        try:
-            import zoneinfo
-            local_now = datetime.datetime.now(zoneinfo.ZoneInfo("America/Mexico_City"))
-        except Exception:
-            local_now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-6)))
-
-        timestamp_str = local_now.strftime("%I:%M:%S %p")
-        conf = float(data.get("confidence", 0.90))
-
-        # Snapshot normalization
-        final_snapshot = data.get("snapshot") or data.get("image_base64")
-        if final_snapshot and not final_snapshot.startswith("data:image"):
-            final_snapshot = f"data:image/jpeg;base64,{final_snapshot}"
-
-        event_type = data.get("event_type", "intrusion")
-        severity = data.get("severity", "high")
-        msg = data.get("message", "Intrusión detectada")
-
-        evidence_text = f"⚠️ ALERTA DE EVIDENCIA DESDE MÓDULO JETSON (MQTT) [{timestamp_str}]:\n• Dispositivo: {module_clean}\n• Tipo: {event_type} ({severity})\n• Evento: {msg}\n• Confianza CV: {int(conf*100)}%"
-
-        crud.add_message(db, thread.id, role="system", content=evidence_text, snapshot=final_snapshot)
-
-        log_level = "ERROR" if severity == "high" or event_type == "intrusion" else "WARN"
-        HardwareState.add_log(
-            msg=f"🚨 [{module_clean}] {msg} (Conf: {int(conf*100)}%)",
-            level=log_level,
-            camera_module="JETSON_CV"
+        claimed = data.get("camara_id") or data.get("module_name")
+        result = ingest_alert(
+            db,
+            node_id=node_id or claimed or "Jetson-PTZ_1",
+            module=claimed or node_id or "Jetson-PTZ_1",
+            event_type=data.get("event_type", "intrusion"),
+            severity=data.get("severity", "high"),
+            message=data.get("message", "Intrusión detectada"),
+            confidence=float(data.get("confidence", 0.90)),
+            snapshot=normalize_snapshot(data.get("snapshot") or data.get("image_base64")),
+            node_ip=data.get("ip"),
+            transport_label=" (MQTT)",
+            store_embedding=False,
         )
-
-        # Telegram Tactical Dispatch
-        telegram_caption = (
-            f"🚨 *ALERTA CRÍTICA SARI — PERÍMETRO*\n\n"
-            f"• *Nodo*: `{module_clean}`\n"
-            f"• *Evento*: {msg}\n"
-            f"• *Severidad*: `{severity.upper()}`\n"
-            f"• *Confianza CV*: `{int(conf*100)}%`\n"
-            f"• *Hora*: `{timestamp_str}`"
-        )
-        telegram_buttons = {
-            "inline_keyboard": [
-                [
-                    {"text": "🚨 Activar Sirena 30s", "callback_data": "btn_siren_activate"},
-                    {"text": "🔒 Bloquear Accesos", "callback_data": "btn_gates_lock"}
-                ],
-                [
-                    {"text": "🔊 Silenciar Alarma", "callback_data": "btn_silence"},
-                    {"text": "📊 Ver Estado", "callback_data": "btn_status"}
-                ]
-            ]
-        }
-        try:
-            send_telegram_alert_photo(final_snapshot, caption=telegram_caption, reply_markup=telegram_buttons)
-        except Exception as ex_tg:
-            logger.warning(f"[MQTT->Telegram] Error delivering alert photo: {ex_tg}")
-
-        if event_type == "intrusion" and conf >= 0.70:
-            HardwareState.siren_active = True
-            HardwareState.alert_count += 1
-            HardwareState.last_alert_time = time.time()
-            execute_physical_tool("activar_sirena", {"duracion_segundos": 30})
-            crud.add_message(db, thread.id, role="system", content="🔊 Respuesta física iniciada: Sirena activada por 30s mediante orden automática.")
-
-            try:
-                import asyncio
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    loop.create_task(manager.broadcast_json({
-                        "event": "siren_activated",
-                        "camara_id": module_clean,
-                        "severity": severity,
-                        "thread_id": thread.id,
-                        "snapshot": final_snapshot
-                    }))
-            except Exception as ex:
-                logger.warning(f"[MQTT] Could not broadcast via ws: {ex}")
-
-        logger.info(f"[MQTT] Alert successfully ingested and persisted for thread {thread.id}")
+        logger.info(f"[MQTT] Alert successfully ingested and persisted for thread {result.thread_id}")
     except Exception as e:
         logger.error(f"[MQTT] Error handling alert event: {e}")
         db.rollback()
