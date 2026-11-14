@@ -19,8 +19,9 @@ from ..domain.actions import ACTIVATE_SIREN, DEACTIVATE_SIREN, LOCK_GATES, UNLOC
 from ..domain.actors import Actor
 from ..adapters.actuators.siren_http import SIRENA_SERVICE_URL
 from ..adapters.persistence.audit_sql import record_physical_action
-from ..adapters.state.memory_state import NODE_TELEMETRY_FIELDS, HardwareState, boot_time
-from ..adapters.composition import execute_physical_tool
+from ..adapters.state.legacy_facade import HardwareState
+from ..adapters.composition import boot_time, execute_physical_tool
+from ..domain.state import NODE_TELEMETRY_FIELDS
 
 __all__ = [
     "ACTIVATE_SIREN", "ALL_TOOLS", "Actor", "DEACTIVATE_SIREN", "HardwareState", "LOCK_GATES", "NODE_TELEMETRY_FIELDS",

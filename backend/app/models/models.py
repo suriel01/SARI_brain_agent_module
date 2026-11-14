@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean, Float
+from sqlalchemy import JSON, Column, Integer, String, Text, DateTime, ForeignKey, Boolean, Float
 from sqlalchemy.orm import relationship
 from pgvector.sqlalchemy import Vector
 from datetime import datetime
@@ -85,3 +85,39 @@ class PhysicalActionLog(Base):
     action = Column(String(50), nullable=False)
     result = Column(String(20), nullable=False)  # success | denied | failed
     detail = Column(Text, nullable=True)
+
+
+class ActuatorStateRow(Base):
+    """Single-row live actuator state and alert counters (id is always 1)."""
+
+    __tablename__ = "actuator_state"
+
+    id = Column(Integer, primary_key=True)
+    siren_active = Column(Boolean, nullable=False, default=False)
+    gates_locked = Column(Boolean, nullable=False, default=False)
+    alert_count = Column(Integer, nullable=False, default=0)
+    last_alert_time = Column(Float, nullable=False, default=0.0)
+    last_alert_thread_id = Column(Integer, nullable=True)
+
+
+class NodeStatus(Base):
+    """Live status and telemetry of a vision node, as last reported. ``last_seen`` mirrors ``data['last_seen']``."""
+
+    __tablename__ = "node_status"
+
+    node_id = Column(String(100), primary_key=True)
+    data = Column(JSON, nullable=False)
+    last_seen = Column(Float, nullable=True, index=True)
+
+
+class OperationalLog(Base):
+    """SOC operational log shown on the dashboard (24 h TTL, newest 300 kept)."""
+
+    __tablename__ = "operational_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    created_at = Column(DateTime, nullable=False)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    message = Column(Text, nullable=False)
+    level = Column(String(20), nullable=False)
+    camera_module = Column(String(100), nullable=False)
