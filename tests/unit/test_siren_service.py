@@ -99,3 +99,17 @@ def test_backend_sends_token_to_siren(client, admin_headers, siren):
     assert res.status_code == 200
     assert siren.calls, "backend did not call the siren service"
     assert siren.calls[0]["headers"]["X-SARI-Siren-Token"] == TOKEN
+
+
+@pytest.mark.parametrize("raw", [b'{"duracion": Infinity}', b'{"duracion": NaN}', b'[1, 2]', b'"text"'])
+def test_non_finite_or_non_object_bodies_get_400(siren_server, raw):
+    base, calls, _ = siren_server
+    req = urllib.request.Request(base + "/api/alarma/activar", data=raw, method="POST")
+    req.add_header("X-SARI-Siren-Token", TOKEN)
+    try:
+        with urllib.request.urlopen(req, timeout=3) as r:
+            status = r.status
+    except urllib.error.HTTPError as e:
+        status = e.code
+    assert status == 400
+    assert calls == []

@@ -72,8 +72,8 @@ def test_telegram_command_dispatcher():
     bad_pin_resp = handle_telegram_command("/sirena 0000", from_chat_id="987654321")
     assert "PIN inválido" in bad_pin_resp or "PIN incorrecto" in bad_pin_resp
 
-    # 4. Siren with correct PIN (1234)
-    siren_resp = handle_telegram_command("/sirena 1234", from_chat_id="987654321")
+    # 4. Siren with the configured security PIN
+    siren_resp = handle_telegram_command(f"/sirena {os.environ['SARI_SECURITY_PIN']}", from_chat_id="987654321")
     assert "activada" in siren_resp.lower()
     assert HardwareState.siren_active is True
 

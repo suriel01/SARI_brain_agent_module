@@ -16,7 +16,15 @@ def handle_telemetry_message(topic: str, payload_str: str):
     try:
         data = json.loads(payload_str)
         parts = topic.split("/")
-        node_id = data.get("node_id") or (parts[2] if len(parts) >= 3 else "Jetson-PTZ_1")
+        topic_node = parts[2] if len(parts) >= 4 and parts[0] == "sari" and parts[1] == "nodes" else None
+        if not topic_node:
+            logger.warning(f"[MQTT] Ignoring message on unexpected topic {topic}")
+            return
+        payload_node = data.get("node_id")
+        if payload_node and payload_node != topic_node:
+            logger.warning(f"[MQTT] Ignoring {topic}: payload node_id does not match the topic node")
+            return
+        node_id = topic_node
         
         HardwareState.nodes[node_id] = {
             "node_id": node_id,
@@ -36,7 +44,15 @@ def handle_status_message(topic: str, payload_str: str):
     try:
         data = json.loads(payload_str) if payload_str else {}
         parts = topic.split("/")
-        node_id = data.get("node_id") or (parts[2] if len(parts) >= 3 else "Jetson-PTZ_1")
+        topic_node = parts[2] if len(parts) >= 4 and parts[0] == "sari" and parts[1] == "nodes" else None
+        if not topic_node:
+            logger.warning(f"[MQTT] Ignoring message on unexpected topic {topic}")
+            return
+        payload_node = data.get("node_id")
+        if payload_node and payload_node != topic_node:
+            logger.warning(f"[MQTT] Ignoring {topic}: payload node_id does not match the topic node")
+            return
+        node_id = topic_node
         status = str(data.get("status", "offline")).lower()
 
         if status == "online":

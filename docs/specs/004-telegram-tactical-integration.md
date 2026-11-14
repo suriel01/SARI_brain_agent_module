@@ -10,7 +10,7 @@ El Módulo Cerebro SARI debe extender su capacidad operativa hacia dispositivos 
 ### 2.1 Requisitos Ubicuos (Ubiquitous Requirements)
 - **RF-UB-01**: El sistema SIEMPRE verificará que el remitente en Telegram pertenezca a la lista blanca (`TELEGRAM_ALLOWED_CHAT_IDS`) antes de procesar cualquier comando o consulta.
 - **RF-UB-02**: El sistema SIEMPRE registrará las interacciones de Telegram en un hilo de auditoría dedicado en PostgreSQL ('🤖 Telegram Operator Chat').
-- **RF-UB-03**: El sistema SIEMPRE requerirá el PIN de seguridad `1234` para ejecutar órdenes con impacto físico (activar sirena, bloquear accesos) emitidas desde Telegram.
+- **RF-UB-03**: El sistema SIEMPRE requerirá el PIN de seguridad configurado en `SARI_SECURITY_PIN` para ejecutar órdenes con impacto físico (activar sirena, silenciar, bloquear accesos) emitidas desde Telegram.
 
 ### 2.2 Requisitos Basados en Eventos (Event-Driven Requirements)
 - **RF-EV-01**: CUANDO se reciba una alerta de intrusión desde cualquier Módulo Ojo (YOLO), el sistema enviará inmediatamente un mensaje prioritario a Telegram con el snapshot adjunto en alta resolución y botones de acción rápida.
@@ -30,6 +30,6 @@ El Módulo Cerebro SARI debe extender su capacidad operativa hacia dispositivos 
 ## 3. Criterios de Aceptación (Acceptance Criteria)
 - **CA-1**: Las alertas de detección YOLO deben enviarse a Telegram con texto y foto en base64 convertida a JPEG.
 - **CA-2**: La desconexión de una Jetson (LWT o caída de heartbeat > 15s) debe disparar una alerta de posible sabotaje a Telegram en menos de 5 segundos.
-- **CA-3**: Los comandos `/status`, `/sirena 1234`, `/silenciar` y `/foto` deben responder de forma interactiva en Telegram.
+- **CA-3**: Los comandos `/status`, `/sirena <PIN>`, `/silenciar <PIN>` y `/foto` deben responder de forma interactiva en Telegram.
 - **CA-4**: Los mensajes que no comiencen con barra `/` deben ser respondidos por el modelo de IA de SARI.
 - **CA-5**: Los usuarios de Telegram no autorizados deben recibir un mensaje de rechazo de acceso ('Acceso no autorizado').

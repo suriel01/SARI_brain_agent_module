@@ -163,10 +163,13 @@ class SirenaHTTPHandler(BaseHTTPRequestHandler):
             payload = json.loads(body.decode("utf-8")) if body else {}
         except (json.JSONDecodeError, ValueError):
             payload = {}
+        if not isinstance(payload, dict):
+            self._send_json(400, {"error": "El cuerpo debe ser un objeto JSON"})
+            return
 
         if self.path == "/api/alarma/activar":
             raw = payload.get("duracion", 30)
-            if isinstance(raw, bool) or not isinstance(raw, (int, float)) or raw <= 0:
+            if isinstance(raw, bool) or not isinstance(raw, (int, float)) or not math.isfinite(raw) or raw <= 0:
                 self._send_json(400, {"error": "duracion debe ser un número positivo de segundos"})
                 return
             duracion = min(int(raw), MAX_DURATION_SECONDS)

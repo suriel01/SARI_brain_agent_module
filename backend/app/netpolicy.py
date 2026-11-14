@@ -53,8 +53,13 @@ def validate_stream_url(url: str) -> str:
     """Returns ``url`` if it points at an allowed vision node, else raises ValueError."""
     if not isinstance(url, str) or not url.strip():
         raise ValueError("stream URL is empty")
+    url = url.strip()
+    # Parser-confusion guard: urlsplit and urllib3/requests disagree on these, so the checked host
+    # could differ from the host actually contacted (e.g. "http://127.0.0.1\\@10.0.0.5/").
+    if any(ord(c) <= 32 or ord(c) == 127 or c == "\\" for c in url):
+        raise ValueError("stream URL contains forbidden characters")
     try:
-        parts = urlsplit(url.strip())
+        parts = urlsplit(url)
         host = parts.hostname
         parts.port  # noqa: B018 - raises ValueError on an invalid port
     except ValueError:
@@ -65,8 +70,19 @@ def validate_stream_url(url: str) -> str:
         raise ValueError("stream URL has no host")
     if ":" in host:
         raise ValueError("IPv6 node addresses are not allowed")
+    if "%" in host:
+        raise ValueError("stream URL host must not contain encoded characters")
+    if parts.scheme.lower() in ("http", "https"):
+        from urllib3.util import parse_url
+
+        try:
+            other = parse_url(url).host
+        except Exception:
+            raise ValueError("stream URL is malformed")
+        if (other or "").lower().rstrip(".") != host.lower().rstrip("."):
+            raise ValueError("stream URL is ambiguous")
     validate_node_host(host)
-    return url.strip()
+    return url
 
 
 def is_allowed_stream_url(url: str) -> bool:
