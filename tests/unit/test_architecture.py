@@ -147,3 +147,16 @@ def test_use_case_failed_actuator_keeps_state_and_does_not_broadcast():
     assert state.siren is False
     assert sent == []
     assert audit == [("activate_siren", "failed")]
+
+
+def test_app_code_uses_the_state_repository_not_the_legacy_facade():
+    """A2 (S3): live state goes through `composition.state`; `HardwareState` is a test-only facade."""
+    app_dir = DOMAIN.parent
+    allowed = {app_dir / "adapters" / "state" / "legacy_facade.py", app_dir / "routers" / "hardware.py"}
+    offenders = [
+        str(path.relative_to(app_dir)) for path in sorted(app_dir.rglob("*.py"))
+        if path not in allowed and "HardwareState" in path.read_text()
+    ]
+    assert offenders == []
+    hardware_src = (app_dir / "routers" / "hardware.py").read_text()
+    assert "HardwareState." not in hardware_src

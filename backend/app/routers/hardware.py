@@ -19,8 +19,8 @@ from ..domain.actions import ACTIVATE_SIREN, DEACTIVATE_SIREN, LOCK_GATES, UNLOC
 from ..domain.actors import Actor
 from ..adapters.actuators.siren_http import SIRENA_SERVICE_URL
 from ..adapters.persistence.audit_sql import record_physical_action
-from ..adapters.state.legacy_facade import HardwareState
-from ..adapters.composition import boot_time, execute_physical_tool
+from ..adapters.state.legacy_facade import HardwareState  # deprecated facade, re-exported for tests only
+from ..adapters.composition import boot_time, execute_physical_tool, state
 from ..domain.state import NODE_TELEMETRY_FIELDS
 
 __all__ = [
@@ -30,6 +30,9 @@ __all__ = [
 ]
 
 router = APIRouter()
+
+SIREN_AUTO_OFF_SECONDS = 30
+GHOST_NODE_SECONDS = 60.0
 logger = logging.getLogger("sari_hardware")
 
 
@@ -138,9 +141,8 @@ def get_system_gpu_telemetry() -> Dict[str, Any]:
 @router.get("/state")
 def get_state(current_user: dict = Depends(get_current_user)):
     now = time.time()
-    HardwareState.purge_expired_logs()
-    if HardwareState.siren_active and (now - HardwareState.last_alert_time > 30):
-        HardwareState.siren_active = False
+    state.purge_expired_logs()
+    state.expire_siren(now, SIREN_AUTO_OFF_SECONDS)
 
     # Synchronize with registered active EyeNode records from database
     db = SessionLocal()
@@ -153,13 +155,10 @@ def get_state(current_user: dict = Depends(get_current_user)):
         db.close()
 
     # Clean up expired ephemeral test nodes (older than 60s and not registered in EyeNode)
-    for ghost_id in list(HardwareState.nodes.keys()):
-        if ghost_id not in registered_ids:
-            if (now - HardwareState.nodes[ghost_id].get("last_seen", 0)) > 60.0:
-                HardwareState.nodes.pop(ghost_id, None)
+    state.prune_nodes(now - GHOST_NODE_SECONDS, keep=registered_ids)
     nodes_list = []
     active_count = 0
-    for nid, node in HardwareState.nodes.items():
+    for node in state.list_nodes().values():
         last_seen = node.get("last_seen", 0)
         is_online = (node.get("is_online") is not False) and ((now - last_seen) < 120.0)
         if is_online:
@@ -170,13 +169,14 @@ def get_state(current_user: dict = Depends(get_current_user)):
             "seconds_since_last_seen": round(now - last_seen, 1)
         })
 
+    snapshot = state.snapshot()
     return {
-        "siren_active": HardwareState.siren_active,
-        "gates_locked": HardwareState.gates_locked,
+        "siren_active": snapshot.siren_active,
+        "gates_locked": snapshot.gates_locked,
         "gates_simulated": True,
-        "alert_count": HardwareState.alert_count,
-        "last_alert_thread_id": HardwareState.last_alert_thread_id,
-        "logs": HardwareState.logs,
+        "alert_count": snapshot.alert_count,
+        "last_alert_thread_id": snapshot.last_alert_thread_id,
+        "logs": state.list_logs(),
         "nodes": nodes_list,
         "nodes_count": active_count,
         "system_telemetry": get_system_gpu_telemetry()
@@ -196,7 +196,7 @@ def receive_node_telemetry(payload: NodeTelemetryPayload, auth_node: str = Depen
         "last_seen": time.time(),
         "is_online": True
     }
-    HardwareState.nodes[node_id] = node_data
+    state.put_node(node_id, node_data)
     return {"status": "success", "message": f"Telemetry recorded for {node_id}"}
 
 @router.post("/manual_action")
@@ -219,11 +219,11 @@ def manual_action(req: dict, current_user: dict = Depends(get_current_user)):
 
     # Legacy toggles (sent by HardwarePanel/Dashboard): flip the current state.
     if action in ("toggle_sirena", "toggle_siren"):
-        if HardwareState.siren_active:
+        if state.actuators().siren_active:
             return execute_physical_tool("deactivate_siren", {}, actor=actor)
         return execute_physical_tool("activate_siren", {"duration_seconds": 30}, actor=actor)
     if action in ("toggle_accesos", "toggle_gates"):
-        if HardwareState.gates_locked:
+        if state.actuators().gates_locked:
             return execute_physical_tool("unlock_gates", {}, actor=actor)
         return execute_physical_tool("lock_gates", {}, actor=actor)
     

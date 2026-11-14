@@ -46,7 +46,7 @@ def login(req: schemas.LoginRequest, request: Request, db: Session = Depends(get
     }
     access_token = jwt.encode(token_data, SECRET_KEY, algorithm=ALGORITHM)
     
-    from .hardware import HardwareState
-    HardwareState.add_log(f"🔑 User [{user.username}] ({user.role.upper()}) logged in successfully", level="INFO", camera_module="AUTH_SYS")
+    from ..adapters.composition import state
+    state.add_log(f"🔑 User [{user.username}] ({user.role.upper()}) logged in successfully", level="INFO", camera_module="AUTH_SYS")
 
     return {"access_token": access_token, "token_type": "bearer", "role": user.role, **perms}

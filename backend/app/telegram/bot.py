@@ -10,7 +10,8 @@ from typing import Optional, Dict, Any
 
 from .service import get_bot_token, is_chat_allowed, send_telegram_message, send_telegram_alert_photo
 from ..database import SessionLocal
-from ..routers.hardware import Actor, HardwareState, execute_physical_tool
+from ..routers.hardware import Actor, execute_physical_tool
+from ..adapters.composition import state
 from ..crud import crud
 from ..models import models
 from ..netpolicy import is_allowed_stream_url
@@ -94,8 +95,8 @@ def fetch_node_snapshot(node_id: str, stream_url: Optional[str], db) -> Optional
         urls_to_try.append(stream_url.replace("/mjpeg", "/snapshot").replace("/video_feed", "/snapshot"))
         urls_to_try.append(stream_url)
     
-    # Also try node IP from HardwareState if available
-    node_ip = HardwareState.nodes.get(node_id, {}).get("ip")
+    # Also try the node IP from live state if available
+    node_ip = (state.get_node(node_id) or {}).get("ip")
     if node_ip:
         urls_to_try.append(f"http://{node_ip}:8080/snapshot")
         urls_to_try.append(f"http://{node_ip}:8080/mjpeg")
@@ -174,11 +175,12 @@ def handle_telegram_command(text: str, from_chat_id: Any) -> str:
 
     if cmd == "/status":
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        siren_str = "🚨 *ACTIVADA*" if HardwareState.siren_active else "🟢 *Inactiva / Silenciada*"
-        gates_str = "🔒 *BLOQUEADOS*" if HardwareState.gates_locked else "🔓 *Abiertos / Normal*"
+        runtime = state.snapshot()
+        siren_str = "🚨 *ACTIVADA*" if runtime.siren_active else "🟢 *Inactiva / Silenciada*"
+        gates_str = "🔒 *BLOQUEADOS*" if runtime.gates_locked else "🔓 *Abiertos / Normal*"
         
         nodes_info = []
-        for nid, node in HardwareState.nodes.items():
+        for nid, node in state.list_nodes().items():
             st = "🟢 ONLINE" if node.get("is_online", True) else "⚪ STANDBY"
             ip = node.get("ip") or "IP desconocida"
             fps = node.get("fps") if node.get("fps") is not None else "?"
@@ -191,7 +193,7 @@ def handle_telegram_command(text: str, from_chat_id: Any) -> str:
             f"*Actuadores Perimetrales:*\n"
             f"• Sirena Física: {siren_str}\n"
             f"• Accesos Perimetrales: {gates_str}\n"
-            f"• Total Alertas: `{HardwareState.alert_count}`\n\n"
+            f"• Total Alertas: `{runtime.alert_count}`\n\n"
             f"*Módulos Ojos Conectados:*\n"
             f"{nodes_text}\n"
         )
@@ -223,7 +225,7 @@ def handle_telegram_command(text: str, from_chat_id: Any) -> str:
         if ok is None:
             return PIN_LOCKED_MSG
         if ok:
-            if HardwareState.gates_locked:
+            if state.actuators().gates_locked:
                 return _act("unlock_gates", {}, chat_id_str, "🔓 *Accesos perimetrales desbloqueados* por orden de Telegram (simulado: sin hardware de portones).")
             else:
                 return _act("lock_gates", {}, chat_id_str, "🔒 *Accesos perimetrales bloqueados* de emergencia por orden de Telegram (simulado: sin hardware de portones).")
@@ -244,6 +246,7 @@ def handle_telegram_command(text: str, from_chat_id: Any) -> str:
                 node_map = {"Jetson-PTZ_1": None}
 
             valid_node_ids = list(node_map.keys())
+            live_nodes = state.list_nodes()
             now_str = datetime.datetime.now().strftime("%I:%M:%S %p")
 
             # Case A: Requesting ALL modules (/fotos or /foto all)
@@ -251,11 +254,11 @@ def handle_telegram_command(text: str, from_chat_id: Any) -> str:
                 sent_count = 0
                 for n_id in valid_node_ids:
                     eye = node_map.get(n_id)
-                    name = eye.name if eye else HardwareState.nodes.get(n_id, {}).get("name", n_id)
-                    ip = eye.ip if eye else HardwareState.nodes.get(n_id, {}).get("ip") or "IP desconocida"
+                    name = eye.name if eye else live_nodes.get(n_id, {}).get("name", n_id)
+                    ip = eye.ip if eye else live_nodes.get(n_id, {}).get("ip") or "IP desconocida"
                     stream_url = eye.stream_url if eye else None
-                    hw_node = HardwareState.nodes.get(n_id, {})
-                    is_online = hw_node.get("is_online", True) if n_id in HardwareState.nodes else (eye.is_active if eye else True)
+                    hw_node = live_nodes.get(n_id, {})
+                    is_online = hw_node.get("is_online", True) if n_id in live_nodes else (eye.is_active if eye else True)
 
                     # Only capture and send photos for nodes that are actually connected/online
                     if not is_online:
@@ -288,8 +291,8 @@ def handle_telegram_command(text: str, from_chat_id: Any) -> str:
                     )
 
                 eye = node_map.get(matched_node_id)
-                name = eye.name if eye else HardwareState.nodes.get(matched_node_id, {}).get("name", matched_node_id)
-                ip = eye.ip if eye else HardwareState.nodes.get(matched_node_id, {}).get("ip") or "IP desconocida"
+                name = eye.name if eye else live_nodes.get(matched_node_id, {}).get("name", matched_node_id)
+                ip = eye.ip if eye else live_nodes.get(matched_node_id, {}).get("ip") or "IP desconocida"
                 stream_url = eye.stream_url if eye else None
 
                 snapshot = fetch_node_snapshot(matched_node_id, stream_url, db)
@@ -304,13 +307,13 @@ def handle_telegram_command(text: str, from_chat_id: Any) -> str:
             # Default to the first online/active node
             target_node_id = valid_node_ids[0]
             for n_id in valid_node_ids:
-                if HardwareState.nodes.get(n_id, {}).get("is_online", True):
+                if live_nodes.get(n_id, {}).get("is_online", True):
                     target_node_id = n_id
                     break
 
             eye = node_map.get(target_node_id)
-            name = eye.name if eye else HardwareState.nodes.get(target_node_id, {}).get("name", target_node_id)
-            ip = eye.ip if eye else HardwareState.nodes.get(target_node_id, {}).get("ip") or "IP desconocida"
+            name = eye.name if eye else live_nodes.get(target_node_id, {}).get("name", target_node_id)
+            ip = eye.ip if eye else live_nodes.get(target_node_id, {}).get("ip") or "IP desconocida"
             stream_url = eye.stream_url if eye else None
             snapshot = fetch_node_snapshot(target_node_id, stream_url, db)
             if snapshot:
