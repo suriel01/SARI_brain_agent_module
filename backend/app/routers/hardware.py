@@ -1,32 +1,36 @@
+"""Hardware HTTP adapter: `/api/hardware/*` routes.
+
+The choke point itself lives in `app.application.physical_actions` (wired in `app.adapters.composition`);
+the names below are re-exported so `app.routers.hardware` stays the import path every channel uses.
+"""
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, Any
 import requests
 import os
 import time
-import datetime
-import asyncio
 import logging
-from dataclasses import dataclass, field
-from ..schemas import schemas
 from ..models import models
 from ..database import SessionLocal
 from .deps import get_current_user, require_hardware_user
 from ..security import has_perm, require_pin
-from ..ws import manager
 from ..node_auth import require_node
+from ..domain.actions import ACTIVATE_SIREN, DEACTIVATE_SIREN, LOCK_GATES, UNLOCK_GATES, ALL_TOOLS, canonical_action
+from ..domain.actors import Actor
+from ..adapters.actuators.siren_http import SIRENA_SERVICE_URL
+from ..adapters.persistence.audit_sql import record_physical_action
+from ..adapters.state.memory_state import NODE_TELEMETRY_FIELDS, HardwareState, boot_time
+from ..adapters.composition import execute_physical_tool
+
+__all__ = [
+    "ACTIVATE_SIREN", "ALL_TOOLS", "Actor", "DEACTIVATE_SIREN", "HardwareState", "LOCK_GATES", "NODE_TELEMETRY_FIELDS",
+    "SIRENA_SERVICE_URL", "UNLOCK_GATES", "boot_time", "canonical_action", "execute_physical_tool",
+    "record_physical_action", "router",
+]
 
 router = APIRouter()
 logger = logging.getLogger("sari_hardware")
 
-SIRENA_SERVICE_URL = os.environ.get("SIRENA_SERVICE_URL", "http://localhost:5000")
-
-
-def _siren_headers() -> dict:
-    from ..config import get_settings
-
-    return {"X-SARI-Siren-Token": get_settings().siren_token}
-boot_time = datetime.datetime.now()
 
 class NodeTelemetryPayload(BaseModel):
     node_id: str
@@ -40,87 +44,6 @@ class NodeTelemetryPayload(BaseModel):
     fps: Optional[float] = None
     link_status: Optional[str] = None
 
-NODE_TELEMETRY_FIELDS = (
-    "ram_used_gb", "ram_total_gb", "cpu_load_pct", "gpu_load_pct", "temp_c", "fps", "link_status",
-)
-
-
-class HardwareState:
-    """In-memory state tracker for physical actuators, node telemetry, and audit logs."""
-    siren_active = False
-    gates_locked = False
-    alert_count = 0
-    last_alert_time = 0.0
-    last_alert_thread_id = None
-    
-    # Vision nodes, keyed by node id. Filled only from real telemetry/alerts (S15: nothing invented).
-    nodes: Dict[str, Dict[str, Any]] = {}
-    
-    logs = [
-        {
-            "timestamp": (boot_time - datetime.timedelta(seconds=10)).strftime("%Y-%m-%d %H:%M:%S"), 
-            "message": "🧠 Brain Module online & listening for YOLO vision node alerts.", 
-            "level": "INFO",
-            "camera_module": "SYS_CORE",
-            "expires_at": (boot_time + datetime.timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
-        },
-        {
-            "timestamp": boot_time.strftime("%Y-%m-%d %H:%M:%S"), 
-            "message": "🛡️ SARI Physical Control System initialized.", 
-            "level": "INFO",
-            "camera_module": "SYS_CORE",
-            "expires_at": (boot_time + datetime.timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
-        }
-    ]
-
-    @classmethod
-    def record_node_activity(cls, node_id: str, ip: Optional[str] = None):
-        """Marks a node as seen. Telemetry it has not reported stays None (unknown)."""
-        if node_id not in cls.nodes:
-            cls.nodes[node_id] = {
-                "node_id": node_id,
-                "name": f"Jetson Node ({node_id})",
-                "ip": ip,
-                **{field: None for field in NODE_TELEMETRY_FIELDS},
-                "last_seen": time.time(),
-            }
-        else:
-            cls.nodes[node_id]["last_seen"] = time.time()
-            if ip:
-                cls.nodes[node_id]["ip"] = ip
-
-    @classmethod
-    def add_log(cls, msg: str, level: str = "INFO", camera_module: str = "SYS_CORE", ttl_hours: int = 24):
-        cls.purge_expired_logs()
-        now = datetime.datetime.now()
-        expires = now + datetime.timedelta(hours=ttl_hours)
-        ts_str = now.strftime("%Y-%m-%d %H:%M:%S")
-        exp_str = expires.strftime("%Y-%m-%d %H:%M:%S")
-        cls.logs.insert(0, {
-            "timestamp": ts_str,
-            "message": msg,
-            "level": level,
-            "camera_module": camera_module,
-            "expires_at": exp_str
-        })
-        if len(cls.logs) > 300:
-            cls.logs.pop()
-
-    @classmethod
-    def purge_expired_logs(cls):
-        now = datetime.datetime.now()
-        kept = []
-        for log in cls.logs:
-            exp = log.get("expires_at")
-            if not exp:
-                kept.append(log)
-                continue
-            try:
-                if datetime.datetime.strptime(exp, "%Y-%m-%d %H:%M:%S") > now:
-                    kept.append(log)
-            except ValueError:
-                kept.append(log)
-        cls.logs = kept
 
 def get_system_gpu_telemetry() -> Dict[str, Any]:
     """Queries host GPU, CPU and Ollama model telemetry. Values that could not be read are None (S15)."""
@@ -210,162 +133,6 @@ def get_system_gpu_telemetry() -> Dict[str, Any]:
         pass
 
     return telemetry
-
-ACTIVATE_SIREN = {"activate_siren", "activar_sirena"}
-DEACTIVATE_SIREN = {"deactivate_siren", "desactivar_sirena"}
-LOCK_GATES = {"lock_gates", "cerrar_accesos"}
-UNLOCK_GATES = {"unlock_gates", "abrir_accesos"}
-ALL_TOOLS = ACTIVATE_SIREN | DEACTIVATE_SIREN | LOCK_GATES | UNLOCK_GATES
-
-
-@dataclass(frozen=True)
-class Actor:
-    """Who is asking for a physical action, and through which channel."""
-
-    name: str
-    channel: str
-    can_control_hardware: bool
-    allowed_tools: frozenset = field(default=frozenset(ALL_TOOLS))
-
-    @classmethod
-    def from_user(cls, user: dict, channel: str) -> "Actor":
-        return cls(
-            name=str(user.get("username") or user.get("sub") or "unknown"),
-            channel=channel,
-            can_control_hardware=has_perm(user, "can_control_hardware"),
-        )
-
-    @classmethod
-    def node(cls, node_id: str) -> "Actor":
-        """An authenticated vision node may raise the alarm, never silence it or touch gates."""
-        return cls(name=f"node:{node_id}", channel="node", can_control_hardware=True, allowed_tools=frozenset(ACTIVATE_SIREN))
-
-    def may_run(self, tool_name: str) -> bool:
-        return self.can_control_hardware and tool_name in self.allowed_tools
-
-
-def canonical_action(tool_name: str) -> str:
-    """Maps Spanish/English tool aliases to one canonical name for the audit trail."""
-    for canonical, aliases in (
-        ("activate_siren", ACTIVATE_SIREN),
-        ("deactivate_siren", DEACTIVATE_SIREN),
-        ("lock_gates", LOCK_GATES),
-        ("unlock_gates", UNLOCK_GATES),
-    ):
-        if tool_name in aliases:
-            return canonical
-    return str(tool_name)[:50]
-
-
-def record_physical_action(actor: Optional[Actor], tool_name: str, result: str, detail: str = "") -> None:
-    """Persists one audit row (S8). Never raises: a broken audit DB must not block raising the alarm.
-
-    Fail-open is deliberate for a siren: losing an audit row is preferable to a silent perimeter.
-    The failure is logged at ERROR so it is visible.
-    """
-    try:
-        db = SessionLocal()
-    except Exception as exc:
-        logger.error("Physical action audit unavailable (%s): %s by %s", exc, tool_name, actor.name if actor else "anonymous")
-        return
-    try:
-        db.add(
-            models.PhysicalActionLog(
-                actor_name=(actor.name if actor else "anonymous")[:100],
-                channel=(actor.channel if actor else "unknown")[:30],
-                action=canonical_action(tool_name),
-                result=result,
-                detail=detail or None,
-            )
-        )
-        db.commit()
-    except Exception as exc:
-        logger.error("Could not persist physical action audit row: %s", exc)
-        try:
-            db.rollback()
-        except Exception:
-            pass
-    finally:
-        db.close()
-
-
-def _call_siren_service(path: str, payload: Optional[dict]) -> tuple:
-    """Calls the siren microservice. Returns (ok, reason); ok only on a 2xx answer."""
-    try:
-        kwargs = {"headers": _siren_headers(), "timeout": 2.0}
-        if payload is not None:
-            kwargs["json"] = payload
-        res = requests.post(f"{SIRENA_SERVICE_URL}{path}", **kwargs)
-    except Exception as exc:
-        logger.error("Siren service unreachable on %s: %s", path, exc)
-        return False, "siren service unreachable"
-    status = getattr(res, "status_code", None)
-    if not isinstance(status, int) or not 200 <= status < 300:
-        logger.error("Siren service answered %s on %s", status, path)
-        return False, f"siren service answered HTTP {status}"
-    return True, ""
-
-
-def _broadcast(payload: dict) -> None:
-    """Best-effort WebSocket notification; only called after the hardware confirmed the action."""
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.create_task(manager.broadcast_json(payload))
-    except Exception:
-        pass
-
-
-def execute_physical_tool(tool_name: str, args: dict = None, *, actor: Actor):
-    """Single choke point for physical actions: checks the actor's permission and audits every call."""
-    result = _execute_physical_tool(tool_name, args or {}, actor=actor)
-    status = result.get("status")
-    record_physical_action(actor, tool_name, status if status in ("success", "denied", "failed") else "failed", result.get("message", ""))
-    return result
-
-
-def _execute_physical_tool(tool_name: str, args: dict, *, actor: Actor):
-    if actor is None or not actor.may_run(tool_name):
-        who = actor.name if actor else "anonymous"
-        via = actor.channel if actor else "unknown"
-        HardwareState.add_log(f"⛔ Physical action '{tool_name}' denied for [{who}] via {via}", level="WARN", camera_module="HARDWARE_CTRL")
-        return {"status": "denied", "message": "⛔ Permission denied: hardware control not authorized."}
-    
-    duration = args.get("duration_seconds") or args.get("duracion_segundos", 30)
-
-    if tool_name in ACTIVATE_SIREN:
-        ok, reason = _call_siren_service("/api/alarma/activar", {"duracion": duration})
-        if not ok:
-            HardwareState.add_log(f"❌ Siren activation FAILED: {reason}", level="ERROR", camera_module="HARDWARE_CTRL")
-            return {"status": "failed", "message": f"❌ Siren activation failed: {reason}."}
-        HardwareState.siren_active = True
-        HardwareState.alert_count += 1
-        HardwareState.last_alert_time = time.time()
-        HardwareState.add_log(f"🚨 Physical Siren activated for {duration}s", level="ERROR", camera_module="HARDWARE_CTRL")
-        _broadcast({"event": "siren_activated"})
-        return {"status": "success", "message": "🚨 Siren activated."}
-
-    elif tool_name in DEACTIVATE_SIREN:
-        ok, reason = _call_siren_service("/api/alarma/desactivar", None)
-        if not ok:
-            HardwareState.add_log(f"❌ Siren deactivation FAILED: {reason}", level="ERROR", camera_module="HARDWARE_CTRL")
-            return {"status": "failed", "message": f"❌ Siren deactivation failed: {reason}. The siren may still be sounding."}
-        HardwareState.siren_active = False
-        HardwareState.add_log("🔊 Siren deactivated / silenced by operator", level="INFO", camera_module="HARDWARE_CTRL")
-        _broadcast({"event": "siren_deactivated"})
-        return {"status": "success", "message": "🔊 Siren turned off & silenced."}
-
-    elif tool_name in LOCK_GATES:
-        HardwareState.gates_locked = True
-        HardwareState.add_log("🔒 Perimeter gates locked (simulated: no gate hardware connected)", level="WARN", camera_module="HARDWARE_CTRL")
-        return {"status": "success", "simulated": True, "message": "🔒 Perimeter gates locked (simulated: no gate hardware connected)."}
-
-    elif tool_name in UNLOCK_GATES:
-        HardwareState.gates_locked = False
-        HardwareState.add_log("🔓 Perimeter gates unlocked (simulated: no gate hardware connected)", level="INFO", camera_module="HARDWARE_CTRL")
-        return {"status": "success", "simulated": True, "message": "🔓 Perimeter gates unlocked (simulated: no gate hardware connected)."}
-
-    return {"status": "error", "message": f"Unknown hardware tool: {tool_name}"}
 
 @router.get("/state")
 def get_state(current_user: dict = Depends(get_current_user)):

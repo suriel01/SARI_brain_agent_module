@@ -3,6 +3,7 @@ import logging
 
 import pytest
 
+from app.adapters.realtime import ws_broadcast
 from app.routers import hardware
 from app.routers.hardware import Actor, HardwareState, execute_physical_tool
 from conftest import SirenRecorder
@@ -110,14 +111,14 @@ def test_failed_deactivate_keeps_siren_active(monkeypatch):
 def test_failed_activation_does_not_broadcast(monkeypatch):
     sent = []
     monkeypatch.setattr(hardware.requests, "post", SirenRecorder(fail=True))
-    monkeypatch.setattr(hardware, "_broadcast", lambda payload: sent.append(payload))
+    monkeypatch.setattr(ws_broadcast, "broadcast", lambda payload, *a, **k: sent.append(payload))
     execute_physical_tool("activate_siren", {}, actor=ADMIN)
     assert sent == []
 
 
 def test_successful_activation_broadcasts(monkeypatch, siren):
     sent = []
-    monkeypatch.setattr(hardware, "_broadcast", lambda payload: sent.append(payload))
+    monkeypatch.setattr(ws_broadcast, "broadcast", lambda payload, *a, **k: sent.append(payload))
     execute_physical_tool("activate_siren", {}, actor=ADMIN)
     assert sent == [{"event": "siren_activated"}]
 
