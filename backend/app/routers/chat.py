@@ -64,7 +64,7 @@ async def chat_endpoint(req: schemas.ChatRequest, db: Session = Depends(get_db),
         if not has_perm(current_user, "can_create_chats"):
             err_msg = "Permission denied: Clearance required to create chat threads." if lang == "en" else "Acción denegada: Permiso requerido para crear hilos."
             raise HTTPException(status_code=403, detail=err_msg)
-        require_pin(req.pin)
+        require_pin(req.pin, key=f"user:{current_user.get('id')}")
         thread = crud.create_thread(db, user_id=user_id, title=req.message[:30])
         thread_id = thread.id
     else:
@@ -390,7 +390,7 @@ def get_threads(db: Session = Depends(get_db), current_user: dict = Depends(get_
 def create_thread_endpoint(req: schemas.ChatThreadCreate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     if not has_perm(current_user, "can_create_chats"):
         raise HTTPException(status_code=403, detail="Permission denied: Clearance required to create chat threads.")
-    require_pin(req.pin)
+    require_pin(req.pin, key=f"user:{current_user.get('id')}")
     new_th = crud.create_thread(db, user_id=current_user.get("id"), title=req.title)
     HardwareState.add_log(f"➕ New chat thread created: '{req.title}'", level="INFO", camera_module="CHAT_MGMT")
     return new_th
@@ -399,7 +399,7 @@ def create_thread_endpoint(req: schemas.ChatThreadCreate, db: Session = Depends(
 def update_thread(thread_id: int, req: schemas.ChatThreadCreate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     if not has_perm(current_user, "can_rename_chats"):
         raise HTTPException(status_code=403, detail="Action denied: Permission required to rename chats.")
-    require_pin(req.pin)
+    require_pin(req.pin, key=f"user:{current_user.get('id')}")
     updated = crud.update_thread_title(db, thread_id, req.title)
     if not updated:
         raise HTTPException(status_code=404, detail="Chat not found")
@@ -410,7 +410,7 @@ def update_thread(thread_id: int, req: schemas.ChatThreadCreate, db: Session = D
 def delete_thread(thread_id: int, pin: Optional[str] = None, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     if not has_perm(current_user, "can_delete_chats"):
         raise HTTPException(status_code=403, detail="Action denied: Permission required to delete chats.")
-    require_pin(pin)
+    require_pin(pin, key=f"user:{current_user.get('id')}")
     deleted = crud.delete_thread(db, thread_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Thread not found")

@@ -400,7 +400,7 @@ def receive_node_telemetry(payload: NodeTelemetryPayload, auth_node: str = Depen
 def manual_action(req: dict, current_user: dict = Depends(get_current_user)):
     if not has_perm(current_user, "can_control_hardware"):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
-    require_pin(req.get("pin"))
+    require_pin(req.get("pin"), key=f"user:{current_user.get('id')}")
 
     action = req.get("action")
     actor = Actor.from_user(current_user, "rest")

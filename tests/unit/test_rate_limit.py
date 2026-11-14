@@ -141,3 +141,18 @@ def test_telegram_message_with_many_pins_counts_one_guess(siren):
     HardwareState.siren_active = False
     bot.handle_telegram_command(f"activa la sirena {PIN} {guesses}", "111")
     assert HardwareState.siren_active is False  # only the last numeric token is tried
+
+
+def test_manual_action_wrong_pins_lock_the_user(client, admin_headers, siren):
+    for _ in range(5):
+        res = client.post("/api/hardware/manual_action", json={"action": "activar_sirena", "pin": "0000"}, headers=admin_headers)
+        assert res.status_code == 401
+    res = client.post("/api/hardware/manual_action", json={"action": "activar_sirena", "pin": "4321"}, headers=admin_headers)
+    assert res.status_code == 429
+    assert siren.calls == []
+
+
+def test_chat_thread_creation_wrong_pins_lock_the_user(client, admin_headers):
+    for _ in range(5):
+        assert client.post("/api/chat", json={"message": "hola", "pin": "0000"}, headers=admin_headers).status_code == 401
+    assert client.post("/api/chat", json={"message": "hola", "pin": "4321"}, headers=admin_headers).status_code == 429
