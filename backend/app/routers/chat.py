@@ -4,7 +4,7 @@ from typing import List, Optional
 import requests
 import os
 import datetime
-import asyncio
+import time
 import contextvars
 
 from ..database import get_db
@@ -56,6 +56,121 @@ def _failure_reply(result: dict, lang: str) -> str:
     if lang == "en":
         return f"⚠️ The physical action could not be completed: {detail}"
     return f"⚠️ La acción física no pudo completarse: {detail}"
+
+
+NODE_ONLINE_WINDOW_S = 120.0
+
+
+def _node_rows(db: Session, lang: str) -> str:
+    """One row per known vision node from live telemetry and registered eyes; unknown values say so."""
+    unknown = "unknown" if lang == "en" else "desconocido"
+    now = time.time()
+    registered = {e.node_id: e for e in db.query(crud.models.EyeNode).all()}
+    rows = []
+    for node_id in sorted(set(HardwareState.nodes) | set(registered)):
+        live = HardwareState.nodes.get(node_id, {})
+        eye = registered.get(node_id)
+        last_seen = live.get("last_seen") or 0.0
+        online = bool(live) and live.get("is_online") is not False and (now - last_seen) < NODE_ONLINE_WINDOW_S
+        ip = live.get("ip") or (eye.ip if eye else None) or unknown
+        name = (eye.name if eye else None) or live.get("name") or node_id
+        link = "🟢 **ONLINE**" if online else "🔴 **OFFLINE**"
+        seen = f"{int(now - last_seen)}s" if last_seen else unknown
+        rows.append(f"| **{name}** (`{node_id}`) | `{ip}` | {link} | {seen} |")
+    if not rows:
+        return "| - | - | - | - |"
+    return "\n".join(rows)
+
+
+def _status_report(db: Session, current_user: dict, lang: str) -> str:
+    now_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    user_role = current_user.get("role")
+    operator = current_user.get("username") or current_user.get("sub") or "Operator"
+    can_hw = has_perm(current_user, "can_control_hardware")
+    recent = db.query(crud.models.EventLog).order_by(crud.models.EventLog.timestamp.desc()).limit(5).all()
+    nodes_md = _node_rows(db, lang)
+    event_rows = [
+        f"| `{ev.id}` | `{ev.timestamp.strftime('%H:%M:%S') if ev.timestamp else '-'}` | `{ev.module_name}` | {ev.event_description} | "
+        f"`{f'{int(ev.confidence * 100)}%' if ev.confidence is not None else '-'}` |"
+        for ev in recent
+    ]
+
+    if lang == "en":
+        siren_status = "🔴 **ACTIVATED (ALERT)**" if HardwareState.siren_active else "🟢 **DEACTIVATED (NORMAL)**"
+        gates_status = "🔒 **LOCKED**" if HardwareState.gates_locked else "🔓 **UNLOCKED**"
+        badge = "👑 **ADMINISTRATOR**" if user_role == "admin" else f"🛡️ **MONITOR (Access Level {current_user.get('clearance_level', 1)})**"
+        events_md = "\n".join(event_rows) or "| - | - | - | No intrusions logged | - |"
+        return f"""# 🛡️ SARI SOC TACTICAL STATUS REPORT
+
+**Report Timestamp:** `{now_time}`  
+**Authenticated Operator:** `{operator}` ({badge})
+
+---
+
+### 📡 1. Physical Actuators
+| Peripheral | Operating Status | Note |
+| :--- | :--- | :--- |
+| **Emergency Siren** | {siren_status} | Last state confirmed by the siren service |
+| **Perimeter Gates** | {gates_status} | Simulated: no gate hardware connected |
+
+---
+
+### 📷 2. Vision Nodes (live telemetry)
+| Node | IP | Link | Last seen |
+| :--- | :--- | :---: | :---: |
+{nodes_md}
+
+---
+
+### 📋 3. Recent Detections
+| ID | Time | Vision Module | Detected Event | Confidence |
+| :---: | :---: | :--- | :--- | :---: |
+{events_md}
+
+---
+
+### 🔒 4. Threat Assessment & RBAC Clearance
+- **Threat Level:** {"🔴 CRITICAL ALERT" if HardwareState.siren_active else "🟢 NORMAL"}
+- **Access Scope:** {"Authorized for manual alarm dispatch and gate control." if can_hw else "⚠️ Read-only Mode: Limited authorization according to RBAC policy."}
+"""
+
+    siren_status = "🔴 **ACTIVADA (ALERTA)**" if HardwareState.siren_active else "🟢 **DESACTIVADA (NORMAL)**"
+    gates_status = "🔒 **BLOQUEADOS**" if HardwareState.gates_locked else "🔓 **DESBLOQUEADOS**"
+    badge = "👑 **ADMINISTRADOR**" if user_role == "admin" else f"🛡️ **MONITOR (Nivel de Acceso {current_user.get('clearance_level', 1)})**"
+    events_md = "\n".join(event_rows) or "| - | - | - | Sin intrusiones registradas | - |"
+    return f"""# 🛡️ REPORTE TÁCTICO DE ESTATUS SARI SOC
+
+**Fecha y Hora del Reporte:** `{now_time}`  
+**Operador Autenticado:** `{operator}` ({badge})
+
+---
+
+### 📡 1. Actuadores Físicos
+| Periférico | Estado Operativo | Nota |
+| :--- | :--- | :--- |
+| **Sirena de Emergencia** | {siren_status} | Último estado confirmado por el servicio de sirena |
+| **Portones Perimetrales** | {gates_status} | Simulado: no hay hardware de portones conectado |
+
+---
+
+### 📷 2. Nodos de Visión (telemetría en vivo)
+| Nodo | IP | Conexión | Última señal |
+| :--- | :--- | :---: | :---: |
+{nodes_md}
+
+---
+
+### 📋 3. Detecciones Recientes
+| ID | Hora | Módulo Visión | Evento Detectado | Confianza |
+| :---: | :---: | :--- | :--- | :---: |
+{events_md}
+
+---
+
+### 🔒 4. Evaluación de Seguridad & RBAC
+- **Nivel de Amenaza:** {"🔴 ALERTA CRÍTICA" if HardwareState.siren_active else "🟢 NORMAL"}
+- **Acceso a Funciones:** {"Autorizado para disparo manual de alarma y control de portones." if can_hw else "⚠️ Modo Lectura: Autorización limitada según política RBAC."}
+"""
 
 
 @router.post("", response_model=schemas.ChatMessageResponse)
@@ -135,163 +250,39 @@ async def chat_endpoint(req: schemas.ChatRequest, db: Session = Depends(get_db),
         msg_db = crud.add_message(db, thread_id, role="agent", content=resp_content)
         return msg_db
 
-    # Fast-rail: Camera / Snapshot Request
+    # Fast-rail: Camera / Snapshot Request (latest real evidence frame, never a fabricated one)
     if any(k in msg_lower for k in [
         "captura", "snapshot", "foto", "imagen de la intrusión", "imagen de la intrusion", 
         "ver camara", "ver cámara", "camera snapshot", "view camera", "take snapshot"
     ]):
-        now_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        if lang == "en":
-            resp_content = f"""📸 **REAL-TIME TACTICAL VISION SNAPSHOT**
-
-| Parameter | Tactical Value |
-| :--- | :--- |
-| **Vision Device:** | Jetson Orin CV Node (IP: `192.168.1.73`) |
-| **Timestamp:** | `{now_time}` |
-| **Detection Filter:** | YOLOv26n Active |
-| **Inference Confidence:** | `96.4%` (PERSON DETECTED) |
-| **Perimeter Status:** | Active Real-time Monitoring OK |
-"""
+        latest = (
+            db.query(crud.models.ChatMessage)
+            .filter(crud.models.ChatMessage.snapshot.isnot(None))
+            .order_by(crud.models.ChatMessage.id.desc())
+            .first()
+        )
+        if latest:
+            taken = latest.timestamp.strftime("%Y-%m-%d %H:%M:%S") if latest.timestamp else "unknown"
+            if lang == "en":
+                resp_content = f"📸 **Latest stored evidence frame** (captured `{taken}` UTC, thread #{latest.thread_id})."
+            else:
+                resp_content = f"📸 **Última captura de evidencia almacenada** (tomada `{taken}` UTC, hilo #{latest.thread_id})."
+            msg_db = crud.add_message(db, thread_id, role="agent", content=resp_content, snapshot=latest.snapshot)
         else:
-            resp_content = f"""📸 **CAPTURA TÁCTICA DE VISIÓN EN TIEMPO REAL**
-
-| Parámetro | Valor Táctico |
-| :--- | :--- |
-| **Dispositivo Visión:** | Jetson Orin CV Node (IP: `192.168.1.73`) |
-| **Fecha / Hora:** | `{now_time}` |
-| **Filtro de Detección:** | YOLOv26n Activo |
-| **Confianza Inferencia:** | `96.4%` (PERSON DETECTED) |
-| **Estado Perímetro:** | Monitoreo en Tiempo Real OK |
-"""
-        msg_db = crud.add_message(db, thread_id, role="agent", content=resp_content)
+            resp_content = (
+                "📷 No evidence frame is stored yet. Live frames are available from the Eyes module."
+                if lang == "en"
+                else "📷 Aún no hay capturas de evidencia almacenadas. Las imágenes en vivo están en el módulo Ojos."
+            )
+            msg_db = crud.add_message(db, thread_id, role="agent", content=resp_content)
         return msg_db
 
-    # Fast-rail: Tactical Status Report (.md breakdown)
+    # Fast-rail: Tactical Status Report (.md breakdown) built only from live state and the DB
     if any(k in msg_lower for k in [
         "reporte de estatus", "estatus del sistema", "reporte del sistema", "status report", 
         "informe de estado", "estado del sistema", "dame el estatus", "system status", "status"
     ]):
-        now_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        recent_event_logs = db.query(crud.models.EventLog).order_by(crud.models.EventLog.timestamp.desc()).limit(5).all()
-        
-        if lang == "en":
-            siren_status = "🔴 **ACTIVATED (ALERT)**" if HardwareState.siren_active else "🟢 **DEACTIVATED (NORMAL)**"
-            gates_status = "🔒 **LOCKED (SECURED)**" if HardwareState.gates_locked else "🔓 **UNLOCKED (NORMAL)**"
-            user_clearance = current_user.get("clearance_level", 1)
-            access_badge = "👑 **ADMINISTRATOR (Full Access Level 5)**" if user_role == "admin" else f"🛡️ **MONITOR (Access Level {user_clearance})**"
-            
-            jetson_db_modules = db.query(crud.models.EventLog.module_name).distinct().all()
-            module_names = set([m[0] for m in jetson_db_modules if m[0]] + ["Jetson Orin Nano 01 (North Zone)"])
-            jetson_rows = []
-            for idx, mod in enumerate(sorted(module_names), 1):
-                ip_addr = "192.168.1.73" if idx == 1 else f"192.168.1.{73 + idx}"
-                jetson_rows.append(f"| **{mod}** | `{ip_addr}` | 🟢 **ONLINE** | 🔴 **RECORDING (REC 1080p)** | `YOLOv26n` |")
-            jetson_nodes_md = "\n".join(jetson_rows)
-
-            table_rows = []
-            if recent_event_logs:
-                for ev in recent_event_logs:
-                    ts = ev.timestamp.strftime("%H:%M:%S")
-                    conf_pct = f"{int((ev.confidence or 0.9)*100)}%"
-                    table_rows.append(f"| `{ev.id}` | `{ts}` | `{ev.module_name}` | {ev.event_description} | `{conf_pct}` |")
-            else:
-                table_rows.append("| - | - | `RAG Engine` | No critical intrusions logged | 100% |")
-            table_md = "\n".join(table_rows)
-
-            resp_content = f"""# 🛡️ SARI SOC TACTICAL STATUS REPORT
-
-**Report Timestamp:** `{now_time}`  
-**Authenticated Operator:** `{current_user.get('username') or current_user.get('sub') or 'Operator'}` ({access_badge})
-
----
-
-### 📡 1. Peripherals & Physical Hardware State
-| Peripheral / Module | Operating Status | Location |
-| :--- | :--- | :--- |
-| **Emergency Siren** | {siren_status} | Central Server |
-| **Perimeter Gates** | {gates_status} | Main Perimeter Accesses |
-| **RAG / PostgreSQL Engine** | 🟢 **pgvector ONLINE** | SOC Database |
-| **Tactical AI Core** | 🟢 **LLM Online (Guardrails Active)** | Central Server |
-
----
-
-### 📷 2. Tactical Vision Modules (Jetson Orin Nano Nodes)
-| Jetson Device | IP / Interface | Link Status | Recording (REC) | CV Model |
-| :--- | :--- | :---: | :---: | :--- |
-{jetson_nodes_md}
-
----
-
-### 📋 3. Recent Intrusion Log & RAG Memory
-| ID | Time | Vision Module | Detected Event | Confidence |
-| :---: | :---: | :--- | :--- | :---: |
-{table_md}
-
----
-
-### 🔒 4. Threat Assessment & RBAC Clearance
-- **Threat Level:** {"🔴 CRITICAL ALERT" if HardwareState.siren_active else "🟢 NORMAL"}
-- **Access Scope:** {"Full authorization for manual alarm dispatch and gate security." if user_role == "admin" or current_user.get("can_control_hardware") else "⚠️ Read-only Mode: Limited authorization according to RBAC policy."}
-"""
-        else:
-            siren_status = "🔴 **ACTIVADA (ALERTA)**" if HardwareState.siren_active else "🟢 **DESACTIVADA (NORMAL)**"
-            gates_status = "🔒 **BLOQUEADOS (SEGURIDAD)**" if HardwareState.gates_locked else "🔓 **DESBLOQUEADOS (NORMAL)**"
-            user_clearance = current_user.get("clearance_level", 1)
-            access_badge = "👑 **ADMINISTRADOR (Acceso Total Nivel 5)**" if user_role == "admin" else f"🛡️ **MONITOR (Nivel de Acceso {user_clearance})**"
-            
-            jetson_db_modules = db.query(crud.models.EventLog.module_name).distinct().all()
-            module_names = set([m[0] for m in jetson_db_modules if m[0]] + ["Jetson Orin Nano 01 (Zona Norte)"])
-            jetson_rows = []
-            for idx, mod in enumerate(sorted(module_names), 1):
-                ip_addr = "192.168.1.73" if idx == 1 else f"192.168.1.{73 + idx}"
-                jetson_rows.append(f"| **{mod}** | `{ip_addr}` | 🟢 **ONLINE** | 🔴 **GRABANDO (REC 1080p)** | `YOLOv26n` |")
-            jetson_nodes_md = "\n".join(jetson_rows)
-
-            table_rows = []
-            if recent_event_logs:
-                for ev in recent_event_logs:
-                    ts = ev.timestamp.strftime("%H:%M:%S")
-                    conf_pct = f"{int((ev.confidence or 0.9)*100)}%"
-                    table_rows.append(f"| `{ev.id}` | `{ts}` | `{ev.module_name}` | {ev.event_description} | `{conf_pct}` |")
-            else:
-                table_rows.append("| - | - | `Sistema RAG` | Sin intrusiones críticas registradas | 100% |")
-            table_md = "\n".join(table_rows)
-
-            resp_content = f"""# 🛡️ REPORTE TÁCTICO DE ESTATUS SARI SOC
-
-**Fecha y Hora del Reporte:** `{now_time}`  
-**Operador Autenticado:** `{current_user.get('username') or current_user.get('sub') or 'Operador'}` ({access_badge})
-
----
-
-### 📡 1. Estado de Periféricos y Hardware Físico
-| Periférico / Módulo | Estado Operativo | Ubicación |
-| :--- | :--- | :--- |
-| **Sirena de Emergencia** | {siren_status} | Servidor Central |
-| **Portones Perimetrales** | {gates_status} | Accesos Principales |
-| **Motor RAG / PostgreSQL** | 🟢 **pgvector ONLINE** | Base de Datos SOC |
-| **Motor de IA Táctica** | 🟢 **LLM Online (Protección Táctica Activa)** | Servidor Central |
-
----
-
-### 📷 2. Módulos de Visión Táctica (Jetson Orin Nano / Nodes)
-| Dispositivo Jetson | IP / Interfaz | Estado Conexión | Grabación (REC) | Modelo CV |
-| :--- | :--- | :---: | :---: | :--- |
-{jetson_nodes_md}
-
----
-
-### 📋 3. Registro de Intrusiones e Historial Reciente (RAG Memory)
-| ID | Hora | Módulo Vision | Evento Detectado | Confianza |
-| :---: | :---: | :--- | :--- | :---: |
-{table_md}
-
----
-
-### 🔒 4. Evaluación de Seguridad & RBAC
-- **Nivel de Amenaza:** {"🔴 ALERTA CRÍTICA" if HardwareState.siren_active else "🟢 NORMAL"}
-- **Acceso a Funciones:** {"Acceso concedido para disparo manual de alarma y bloqueo de portones." if user_role == "admin" or current_user.get("can_control_hardware") else "⚠️ Modo Lectura: Autorización limitada según política RBAC."}
-"""
+        resp_content = _status_report(db, current_user, lang)
         msg_db = crud.add_message(db, thread_id, role="agent", content=resp_content)
         return msg_db
 

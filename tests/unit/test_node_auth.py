@@ -13,7 +13,7 @@ ALERT_PATHS = [
 
 @pytest.fixture(autouse=True)
 def _no_telegram(monkeypatch):
-    from app.routers import alerts
+    from app.services import alert_ingest as alerts
 
     monkeypatch.setattr(alerts, "send_telegram_alert_photo", lambda *a, **k: None)
     monkeypatch.setattr(alerts, "save_event_and_embedding", lambda *a, **k: None)
