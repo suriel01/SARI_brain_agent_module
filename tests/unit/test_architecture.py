@@ -73,6 +73,13 @@ def test_routers_hardware_reexports_the_domain_actor():
     assert hardware.ALL_TOOLS == ALL_TOOLS
 
 
+def test_services_alert_ingest_is_the_application_module():
+    from app.application import alert_ingest as application_module
+    from app.services import alert_ingest as legacy_module
+
+    assert legacy_module is application_module
+
+
 class _FakeSiren:
     def __init__(self, ok=True):
         self.ok, self.calls = ok, []

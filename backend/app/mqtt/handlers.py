@@ -6,7 +6,7 @@ from typing import Optional
 from ..config import get_settings
 from ..database import SessionLocal
 from ..routers.hardware import NODE_TELEMETRY_FIELDS, HardwareState
-from ..services.alert_ingest import ingest_alert, normalize_snapshot
+from ..application.alert_ingest import ingest_alert, normalize_snapshot
 from ..telegram.watchdog import reset_node_connection_state, trigger_node_disconnection_alert
 
 logger = logging.getLogger("sari_mqtt")

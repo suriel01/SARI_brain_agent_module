@@ -5,7 +5,7 @@ from typing import Optional
 
 from ..database import get_db
 from ..node_auth import require_node
-from ..services.alert_ingest import ingest_alert, normalize_snapshot
+from ..application.alert_ingest import ingest_alert, normalize_snapshot
 from .deps import get_current_user
 
 router = APIRouter()
