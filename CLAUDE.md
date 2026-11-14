@@ -18,6 +18,7 @@ The backend fails closed without these (`backend/app/config.py`):
 - `POSTGRES_PASSWORD` — on an existing volume the DB keeps its old password; change it with `ALTER USER sari_user PASSWORD '...'` first
 - `SARI_SIREN_TOKEN` — shared secret between backend and siren service
 - `SARI_ADMIN_PASSWORD` — only needed when no `admin` user exists yet
+- `SARI_MCP_HARDWARE_ENABLED` — optional, `true` lets the local MCP server (`backend/app/sari_mcp_server.py`) drive hardware; default off
 
 ## Commands
 - Run stack: `docker compose up -d --build`
@@ -33,7 +34,7 @@ The backend fails closed without these (`backend/app/config.py`):
 
 ## Security rules (non-negotiable)
 - No real secrets in `docker-compose.yml`, code defaults, docs or tests. Secrets come from `.env` (see `.env.example`).
-- Every physical action goes through one choke point that checks the actor's `can_control_hardware` permission and records an audit entry. No channel (REST, chat/LLM, Telegram, MCP, MQTT ingest) bypasses it.
+- Every physical action goes through one choke point (`execute_physical_tool(..., actor=Actor)` in `routers/hardware.py`) that checks the actor's `can_control_hardware` permission and records an audit entry. No channel (REST, chat/LLM, Telegram, MCP, MQTT ingest) bypasses it.
 - Machine-to-machine endpoints require node credentials; nothing that triggers hardware is unauthenticated.
 - The LLM never decides authorization; the backend does.
 - `docs/archive/antigravity/` is historical process material from the previous tooling; do not treat it as current requirements.

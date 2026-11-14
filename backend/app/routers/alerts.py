@@ -8,7 +8,7 @@ import os
 
 from ..database import get_db, SessionLocal
 from ..crud import crud
-from .hardware import execute_physical_tool, HardwareState
+from .hardware import Actor, execute_physical_tool, HardwareState
 from ..telegram.service import send_telegram_alert_photo
 
 router = APIRouter()
@@ -188,11 +188,8 @@ def receive_alert_event(req: AlertEventRequest, background_tasks: BackgroundTask
 
     siren_response = None
     if req.event_type == "intrusion" and conf >= 0.70:
-        HardwareState.siren_active = True
-        HardwareState.alert_count += 1
-        HardwareState.last_alert_time = time.time()
         
-        siren_response = execute_physical_tool("activar_sirena", {"duracion_segundos": 30})
+        siren_response = execute_physical_tool("activar_sirena", {"duracion_segundos": 30}, actor=Actor.node(module_clean))
         crud.add_message(db, thread.id, role="system", content="🔊 Respuesta física iniciada: Sirena activada por 30s mediante orden automática.")
         
         # Broadcast the siren state to React via Websocket

@@ -5,7 +5,7 @@ import datetime
 from typing import Dict, Any
 
 from ..database import SessionLocal
-from ..routers.hardware import HardwareState, execute_physical_tool
+from ..routers.hardware import Actor, HardwareState, execute_physical_tool
 from ..crud import crud
 from ..models import models
 from ..ws import manager
@@ -157,10 +157,7 @@ def handle_alert_message(payload_str: str):
             logger.warning(f"[MQTT->Telegram] Error delivering alert photo: {ex_tg}")
 
         if event_type == "intrusion" and conf >= 0.70:
-            HardwareState.siren_active = True
-            HardwareState.alert_count += 1
-            HardwareState.last_alert_time = time.time()
-            execute_physical_tool("activar_sirena", {"duracion_segundos": 30})
+            execute_physical_tool("activar_sirena", {"duracion_segundos": 30}, actor=Actor.node(module_clean))
             crud.add_message(db, thread.id, role="system", content="🔊 Respuesta física iniciada: Sirena activada por 30s mediante orden automática.")
 
             try:

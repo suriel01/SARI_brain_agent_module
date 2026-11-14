@@ -6,6 +6,7 @@ import os
 import time
 import datetime
 import asyncio
+from dataclasses import dataclass, field
 from ..schemas import schemas
 from ..models import models
 from ..database import SessionLocal
@@ -229,14 +230,53 @@ def get_system_gpu_telemetry() -> Dict[str, Any]:
 
     return telemetry
 
-def execute_physical_tool(tool_name: str, args: dict = None):
-    """Executes physical hardware actions with English and Spanish backward-compatible names."""
+ACTIVATE_SIREN = {"activate_siren", "activar_sirena"}
+DEACTIVATE_SIREN = {"deactivate_siren", "desactivar_sirena"}
+LOCK_GATES = {"lock_gates", "cerrar_accesos"}
+UNLOCK_GATES = {"unlock_gates", "abrir_accesos"}
+ALL_TOOLS = ACTIVATE_SIREN | DEACTIVATE_SIREN | LOCK_GATES | UNLOCK_GATES
+
+
+@dataclass(frozen=True)
+class Actor:
+    """Who is asking for a physical action, and through which channel."""
+
+    name: str
+    channel: str
+    can_control_hardware: bool
+    allowed_tools: frozenset = field(default=frozenset(ALL_TOOLS))
+
+    @classmethod
+    def from_user(cls, user: dict, channel: str) -> "Actor":
+        return cls(
+            name=str(user.get("username") or user.get("sub") or "unknown"),
+            channel=channel,
+            can_control_hardware=has_perm(user, "can_control_hardware"),
+        )
+
+    @classmethod
+    def node(cls, node_id: str) -> "Actor":
+        """An authenticated vision node may raise the alarm, never silence it or touch gates."""
+        return cls(name=f"node:{node_id}", channel="node", can_control_hardware=True, allowed_tools=frozenset(ACTIVATE_SIREN))
+
+    def may_run(self, tool_name: str) -> bool:
+        return self.can_control_hardware and tool_name in self.allowed_tools
+
+
+def execute_physical_tool(tool_name: str, args: dict = None, *, actor: Actor):
+    """Single choke point for physical actions. Checks the actor's permission before touching hardware."""
     if args is None:
         args = {}
+
+    if actor is None or not actor.may_run(tool_name):
+        who = actor.name if actor else "anonymous"
+        via = actor.channel if actor else "unknown"
+        HardwareState.add_log(f"⛔ Physical action '{tool_name}' denied for [{who}] via {via}", level="WARN", camera_module="HARDWARE_CTRL")
+        return {"status": "denied", "message": "⛔ Permission denied: hardware control not authorized."}
     
     duration = args.get("duration_seconds") or args.get("duracion_segundos", 30)
 
-    if tool_name in ["activate_siren", "activar_sirena"]:
+    if tool_name in ACTIVATE_SIREN:
         HardwareState.siren_active = True
         HardwareState.alert_count += 1
         HardwareState.last_alert_time = time.time()
@@ -256,7 +296,7 @@ def execute_physical_tool(tool_name: str, args: dict = None):
 
         return {"status": "success", "message": "🚨 Siren activated."}
 
-    elif tool_name in ["deactivate_siren", "desactivar_sirena"]:
+    elif tool_name in DEACTIVATE_SIREN:
         HardwareState.siren_active = False
         HardwareState.add_log("🔊 Siren deactivated / silenced by operator", level="INFO", camera_module="HARDWARE_CTRL")
         
@@ -274,12 +314,12 @@ def execute_physical_tool(tool_name: str, args: dict = None):
 
         return {"status": "success", "message": "🔊 Siren turned off & silenced."}
 
-    elif tool_name in ["lock_gates", "cerrar_accesos"]:
+    elif tool_name in LOCK_GATES:
         HardwareState.gates_locked = True
         HardwareState.add_log("🔒 Perimeter gates locked", level="WARN", camera_module="HARDWARE_CTRL")
         return {"status": "success", "message": "🔒 Perimeter gates locked."}
 
-    elif tool_name in ["unlock_gates", "abrir_accesos"]:
+    elif tool_name in UNLOCK_GATES:
         HardwareState.gates_locked = False
         HardwareState.add_log("🔓 Perimeter gates unlocked", level="INFO", camera_module="HARDWARE_CTRL")
         return {"status": "success", "message": "🔓 Perimeter gates unlocked."}
@@ -360,17 +400,18 @@ def manual_action(req: dict, current_user: dict = Depends(get_current_user)):
     require_pin(req.get("pin"))
 
     action = req.get("action")
+    actor = Actor.from_user(current_user, "rest")
     if action in ["toggle_sirena", "toggle_siren", "activar_sirena", "activate_siren", "desactivar_sirena", "deactivate_siren"]:
         if HardwareState.siren_active:
-            return execute_physical_tool("deactivate_siren", {})
+            return execute_physical_tool("deactivate_siren", {}, actor=actor)
         else:
-            return execute_physical_tool("activate_siren", {"duration_seconds": 30})
+            return execute_physical_tool("activate_siren", {"duration_seconds": 30}, actor=actor)
             
     elif action in ["toggle_accesos", "toggle_gates", "cerrar_accesos", "lock_gates", "abrir_accesos", "unlock_gates"]:
         if HardwareState.gates_locked:
-            return execute_physical_tool("unlock_gates", {})
+            return execute_physical_tool("unlock_gates", {}, actor=actor)
         else:
-            return execute_physical_tool("lock_gates", {})
+            return execute_physical_tool("lock_gates", {}, actor=actor)
     
     raise HTTPException(status_code=400, detail=f"Unknown hardware action: {action}")
 

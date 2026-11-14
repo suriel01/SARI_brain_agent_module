@@ -5,12 +5,13 @@ import requests
 import os
 import datetime
 import asyncio
+import contextvars
 
 from ..database import get_db
 from ..crud import crud
 from ..schemas import schemas
 from .deps import get_current_user
-from .hardware import execute_physical_tool, HardwareState
+from .hardware import Actor, execute_physical_tool, HardwareState
 from ..security import has_perm, require_pin
 
 router = APIRouter()
@@ -25,20 +26,24 @@ from nemoguardrails.actions import action
 guardrails_path = os.path.join(os.path.dirname(__file__), "../guardrails")
 config = RailsConfig.from_path(guardrails_path)
 
+# Actor on whose behalf the LLM is acting. Unset means no one: every physical action is denied.
+current_actor: contextvars.ContextVar = contextvars.ContextVar("sari_llm_actor", default=None)
+
+
 @action(name="execute_activar_sirena")
 async def action_activate_siren():
-    res = execute_physical_tool("activate_siren", {"duration_seconds": 30})
-    return res.get("message", "Siren activated.")
+    res = execute_physical_tool("activate_siren", {"duration_seconds": 30}, actor=current_actor.get())
+    return res.get("message", "")
 
 @action(name="execute_desactivar_sirena")
 async def action_deactivate_siren():
-    res = execute_physical_tool("deactivate_siren", {})
-    return res.get("message", "Siren deactivated.")
+    res = execute_physical_tool("deactivate_siren", {}, actor=current_actor.get())
+    return res.get("message", "")
 
 @action(name="execute_cerrar_accesos")
 async def action_lock_gates():
-    res = execute_physical_tool("lock_gates", {})
-    return res.get("message", "Gates locked.")
+    res = execute_physical_tool("lock_gates", {}, actor=current_actor.get())
+    return res.get("message", "")
 
 # Global NeMo Guardrails instance
 rails_app = LLMRails(config)
@@ -73,6 +78,7 @@ async def chat_endpoint(req: schemas.ChatRequest, db: Session = Depends(get_db),
     HardwareState.add_log(f"💬 User [{current_user.get('username') or 'Operator'}]: {req.message[:50]}", level="INFO", camera_module="CHAT_USER")
     msg_lower = req.message.lower()
     can_hw = has_perm(current_user, "can_control_hardware")
+    chat_actor = Actor.from_user(current_user, "chat")
 
     # Fast-rail: Deactivate / Silence Siren
     if any(k in msg_lower for k in [
@@ -84,7 +90,7 @@ async def chat_endpoint(req: schemas.ChatRequest, db: Session = Depends(get_db),
         if not can_hw:
             resp_content = "Protocol denied: Insufficient clearance to deactivate the physical siren." if lang == "en" else "Protocolo denegado: Autorización insuficiente para desactivar la sirena/alarma física."
         else:
-            execute_physical_tool("deactivate_siren", {})
+            execute_physical_tool("deactivate_siren", {}, actor=chat_actor)
             resp_content = "🔊 Acknowledged. The physical alarm/siren has been deactivated. The system returns to normal monitoring state." if lang == "en" else "🔊 Entendido. La sirena física/alarma ha sido desactivada. El sistema vuelve a su estado de monitoreo normal."
         msg_db = crud.add_message(db, thread_id, role="agent", content=resp_content)
         return msg_db
@@ -99,7 +105,7 @@ async def chat_endpoint(req: schemas.ChatRequest, db: Session = Depends(get_db),
         if not can_hw:
             resp_content = "Protocol denied: Insufficient clearance to activate the physical siren." if lang == "en" else "Protocolo denegado: Autorización insuficiente para activar la sirena/alarma física."
         else:
-            execute_physical_tool("activate_siren", {"duration_seconds": 30})
+            execute_physical_tool("activate_siren", {"duration_seconds": 30}, actor=chat_actor)
             resp_content = "🚨 Acknowledged. I have activated the emergency physical siren for 30 seconds. Perimeter is now on maximum alert." if lang == "en" else "🚨 Entendido. He activado la sirena física/alarma de emergencia por 30 segundos. El sistema se encuentra en alerta máxima."
         msg_db = crud.add_message(db, thread_id, role="agent", content=resp_content)
         return msg_db
@@ -112,7 +118,7 @@ async def chat_endpoint(req: schemas.ChatRequest, db: Session = Depends(get_db),
         if not can_hw:
             resp_content = "Protocol denied: Insufficient clearance to lock perimeter gates." if lang == "en" else "Protocolo denegado: Autorización insuficiente para bloquear accesos."
         else:
-            execute_physical_tool("lock_gates", {})
+            execute_physical_tool("lock_gates", {}, actor=chat_actor)
             resp_content = "🔒 Acknowledged. All perimeter gates and access points have been locked successfully." if lang == "en" else "🔒 Entendido. Todos los accesos perimetrales han sido bloqueados con éxito."
         msg_db = crud.add_message(db, thread_id, role="agent", content=resp_content)
         return msg_db
@@ -333,7 +339,11 @@ async def chat_endpoint(req: schemas.ChatRequest, db: Session = Depends(get_db),
 
     # Try NeMo Guardrails (with language context)
     try:
-        response = await rails_app.generate_async(messages=messages)
+        actor_token = current_actor.set(Actor.from_user(current_user, "llm"))
+        try:
+            response = await rails_app.generate_async(messages=messages)
+        finally:
+            current_actor.reset(actor_token)
         if isinstance(response, dict) and "content" in response:
             llm_text = response["content"]
         elif isinstance(response, str):

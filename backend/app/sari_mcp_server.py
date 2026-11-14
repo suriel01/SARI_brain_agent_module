@@ -9,27 +9,29 @@ from pydantic import BaseModel, Field
 # Initialize FastMCP Server (SARI NeMoClaw)
 mcp = FastMCP("nemoclaw_sari")
 
-SIRENA_SERVICE_URL = os.environ.get("SIRENA_SERVICE_URL", "http://localhost:5000")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/chat")
 OLLAMA_EMBED_URL = OLLAMA_URL.replace("/api/chat", "/api/embeddings")
 OLLAMA_EMBED_MODEL = "nomic-embed-text"
 
-try:
-    from app.database import SessionLocal
-    from app.models import models
-except ImportError:
-    pass
+from app.database import SessionLocal
+from app.models import models
+from app.routers.hardware import Actor, execute_physical_tool
+
+
+def _mcp_actor() -> Actor:
+    """The local MCP client may drive hardware only when explicitly enabled for this host."""
+    enabled = os.environ.get("SARI_MCP_HARDWARE_ENABLED", "false").strip().lower() == "true"
+    return Actor(name="mcp:local", channel="mcp", can_control_hardware=enabled)
+
+
+def _run(tool: str, args: dict) -> str:
+    return execute_physical_tool(tool, args, actor=_mcp_actor()).get("message", "")
+
 
 @mcp.tool()
 def activate_siren(duration_seconds: int = 30) -> str:
     """Activates the physical alarm siren."""
-    try:
-        res = requests.post(f"{SIRENA_SERVICE_URL}/api/alarma/activar", json={"duracion": duration_seconds}, timeout=5.0)
-        if res.status_code == 200:
-            return f"Siren activated for {duration_seconds} seconds."
-        return f"Error activating siren: HTTP {res.status_code}"
-    except Exception as e:
-        return f"Connection error with siren service: {e}"
+    return _run("activate_siren", {"duration_seconds": duration_seconds})
 
 @mcp.tool()
 def activar_sirena(duracion_segundos: int = 30) -> str:
@@ -39,13 +41,7 @@ def activar_sirena(duracion_segundos: int = 30) -> str:
 @mcp.tool()
 def deactivate_siren() -> str:
     """Deactivates the physical alarm siren if sounding."""
-    try:
-        res = requests.post(f"{SIRENA_SERVICE_URL}/api/alarma/desactivar", timeout=5.0)
-        if res.status_code == 200:
-            return "Siren deactivated and silenced."
-        return f"Error deactivating siren: HTTP {res.status_code}"
-    except Exception as e:
-        return f"Connection error with siren service: {e}"
+    return _run("deactivate_siren", {})
 
 @mcp.tool()
 def desactivar_sirena() -> str:
@@ -55,7 +51,7 @@ def desactivar_sirena() -> str:
 @mcp.tool()
 def lock_gates() -> str:
     """Locks all perimeter gates."""
-    return "All perimeter gates locked successfully."
+    return _run("lock_gates", {})
 
 @mcp.tool()
 def cerrar_accesos() -> str:
