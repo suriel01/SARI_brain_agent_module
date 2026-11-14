@@ -8,6 +8,7 @@ from ..database import get_db
 from ..models import models
 from ..schemas import schemas
 from .deps import get_current_user
+from ..security import require_pin
 from .hardware import HardwareState
 
 router = APIRouter()
@@ -86,8 +87,7 @@ def update_eye(node_id: str, eye_up: schemas.EyeNodeUpdate, db: Session = Depend
         raise HTTPException(status_code=404, detail="Nodo Ojo no encontrado")
 
     # Security PIN verification for modifying hardware node properties
-    if eye_up.pin and eye_up.pin != "1234":
-        raise HTTPException(status_code=403, detail="PIN de seguridad inválido. Operación rechazada.")
+    require_pin(eye_up.pin)
 
     if eye_up.name is not None:
         eye.name = eye_up.name

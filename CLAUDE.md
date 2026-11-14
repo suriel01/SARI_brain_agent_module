@@ -10,6 +10,14 @@ SARI (Sistema Autónomo de Respuesta a Intrusiones) is a **physical security sys
   `docker run --rm -v "$PWD/mosquitto/config:/m" eclipse-mosquitto:2.0 mosquitto_passwd -c -b /m/passwd <user> <password>`
 - PostgreSQL 15 + pgvector.
 
+## Required environment (`.env`, never committed)
+The backend fails closed without these (`backend/app/config.py`):
+- `SARI_SECRET_KEY` — 32+ chars (`openssl rand -hex 32`)
+- `SARI_SECURITY_PIN` — 4+ digits, not `1234`
+- `MQTT_USER`, `MQTT_PASSWORD` — must match `mosquitto/config/passwd`
+- `POSTGRES_PASSWORD` — on an existing volume the DB keeps its old password; change it with `ALTER USER sari_user PASSWORD '...'` first
+- `SARI_ADMIN_PASSWORD` — only needed when no `admin` user exists yet
+
 ## Commands
 - Run stack: `docker compose up -d --build`
 - Unit tests (no Docker needed): `python -m venv .venv && .venv/bin/pip install -r backend/requirements-dev.txt && .venv/bin/pytest tests/unit -q`

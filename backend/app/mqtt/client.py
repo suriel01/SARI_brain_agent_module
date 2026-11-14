@@ -7,10 +7,13 @@ from .handlers import handle_telemetry_message, handle_status_message, handle_al
 
 logger = logging.getLogger("sari_mqtt")
 
-BROKER_HOST = os.environ.get("MQTT_BROKER_HOST", "sari-mqtt")
-BROKER_PORT = int(os.environ.get("MQTT_BROKER_PORT", 1883))
-BROKER_USER = os.environ.get("MQTT_USER", "sari_operator")
-BROKER_PASS = os.environ.get("MQTT_PASSWORD", "sari_secure_password_2026")
+from ..config import get_settings
+
+_settings = get_settings()
+BROKER_HOST = _settings.mqtt_host
+BROKER_PORT = _settings.mqtt_port
+BROKER_USER = _settings.mqtt_user
+BROKER_PASS = _settings.mqtt_password
 
 _mqtt_client = None
 

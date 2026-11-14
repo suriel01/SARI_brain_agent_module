@@ -7,7 +7,7 @@ import paho.mqtt.client as mqtt
 BROKER_HOST = os.environ.get("MQTT_BROKER_HOST", "sari-mqtt")
 BROKER_PORT = int(os.environ.get("MQTT_BROKER_PORT", 1883))
 BROKER_USER = os.environ.get("MQTT_USER", "sari_operator")
-BROKER_PASS = os.environ.get("MQTT_PASSWORD", "sari_secure_password_2026")
+BROKER_PASS = os.environ["MQTT_PASSWORD"]
 
 def test_mqtt_alert_ingestion_and_db_persistence():
     from app.database import SessionLocal
@@ -64,7 +64,7 @@ def test_mqtt_alert_ingestion_and_db_persistence():
     import urllib.request
     login_req = urllib.request.Request(
         "http://127.0.0.1:7000/api/auth/login",
-        data=json.dumps({"username": "admin", "password": "sari_password"}).encode(),
+        data=json.dumps({"username": "admin", "password": os.environ["SARI_ADMIN_PASSWORD"]}).encode(),
         headers={"Content-Type": "application/json"}
     )
     with urllib.request.urlopen(login_req, timeout=3.0) as l_resp:

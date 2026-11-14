@@ -1,3 +1,4 @@
+import os
 import pytest
 import requests
 import json
@@ -7,7 +8,7 @@ BASE_URL = "http://127.0.0.1:7000"
 def get_auth_token():
     res = requests.post(
         f"{BASE_URL}/api/auth/login",
-        json={"username": "admin", "password": "sari_password"},
+        json={"username": "admin", "password": os.environ["SARI_ADMIN_PASSWORD"]},
         timeout=3.0
     )
     assert res.status_code == 200, "Login failed"

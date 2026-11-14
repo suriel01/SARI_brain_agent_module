@@ -141,8 +141,10 @@ Abre tu navegador en:
 👉 **[http://localhost:5173](http://localhost:5173)**
 
 - **Usuario**: `admin`
-- **Contraseña**: `sari_password`
-- **PIN de Seguridad**: `1234`
+- **Contraseña**: el valor de `SARI_ADMIN_PASSWORD` en `.env` (solo se usa para crear el admin la primera vez)
+- **PIN de Seguridad**: el valor de `SARI_SECURITY_PIN` en `.env`
+
+El backend no arranca si faltan `SARI_SECRET_KEY` (32+ caracteres), `SARI_SECURITY_PIN`, `MQTT_USER`, `MQTT_PASSWORD` o `POSTGRES_PASSWORD`.
 
 ---
 

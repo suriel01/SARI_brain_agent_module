@@ -4,7 +4,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+from .config import ConfigError, KNOWN_INSECURE_VALUES, get_settings
 from .database import engine, SessionLocal
+
+# Fail closed: refuse to start without the required security settings.
+get_settings()
 from .models import models
 from .schemas import schemas
 from .crud import crud
@@ -58,18 +62,19 @@ else:
         allow_headers=["*"],
     )
 
-# Seed Admin User y Hilo Inicial
-@app.on_event("startup")
-def startup_event():
-    init_db()
+def seed_initial_data() -> None:
+    """Seed the bootstrap admin, default thread and default eye node. Admin password comes from SARI_ADMIN_PASSWORD."""
     db = SessionLocal()
     try:
         admin = crud.get_user_by_username(db, "admin")
         if not admin:
+            bootstrap_password = os.environ.get("SARI_ADMIN_PASSWORD", "").strip()
+            if not bootstrap_password or bootstrap_password in KNOWN_INSECURE_VALUES:
+                raise ConfigError("SARI_ADMIN_PASSWORD is required to create the initial admin user")
             admin_user = schemas.UserCreate(
-                username="admin", 
-                password="sari_password", 
-                role="admin", 
+                username="admin",
+                password=bootstrap_password,
+                role="admin",
                 clearance_level=5
             )
             admin = crud.create_user(db, admin_user)
@@ -97,6 +102,12 @@ def startup_event():
             print("Default Jetson-PTZ_1 eye node registered")
     finally:
         db.close()
+
+
+@app.on_event("startup")
+def startup_event():
+    init_db()
+    seed_initial_data()
 
     # Iniciar cliente MQTT en segundo plano
     try:

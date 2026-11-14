@@ -7,13 +7,13 @@ import paho.mqtt.client as mqtt
 BROKER_HOST = os.environ.get("MQTT_BROKER_HOST", "sari-mqtt")
 BROKER_PORT = int(os.environ.get("MQTT_BROKER_PORT", 1883))
 BROKER_USER = os.environ.get("MQTT_USER", "sari_operator")
-BROKER_PASS = os.environ.get("MQTT_PASSWORD", "sari_secure_password_2026")
+BROKER_PASS = os.environ["MQTT_PASSWORD"]
 
 def test_mqtt_to_http_fallback():
     # 1. Login to check backend
     login_res = requests.post(
         "http://127.0.0.1:7000/api/auth/login",
-        json={"username": "admin", "password": "sari_password"},
+        json={"username": "admin", "password": os.environ["SARI_ADMIN_PASSWORD"]},
         timeout=3.0
     )
     token = login_res.json()["access_token"]

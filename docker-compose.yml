@@ -24,18 +24,19 @@ services:
       - OLLAMA_URL=http://host.docker.internal:11434/api/chat
       - OLLAMA_MODEL=qwen2.5:7b
       - SIRENA_SERVICE_URL=http://sari-sirena:5000
-      - DATABASE_URL=postgresql://sari_user:sari_password@postgres_db:5432/sari_db
+      - DATABASE_URL=postgresql://sari_user:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres_db:5432/sari_db
       - OPENAI_API_BASE=http://host.docker.internal:11434/v1
       - OPENAI_BASE_URL=http://host.docker.internal:11434/v1
       - OPENAI_API_KEY=ollama
-      - SARI_SECRET_KEY=SARI_SUPER_SECRET_KEY
-      - SARI_SECURITY_PIN=1234
-      - SARI_TOKEN_EXPIRE_MINUTES=720
+      - SARI_SECRET_KEY=${SARI_SECRET_KEY:?set SARI_SECRET_KEY in .env}
+      - SARI_SECURITY_PIN=${SARI_SECURITY_PIN:?set SARI_SECURITY_PIN in .env}
+      - SARI_ADMIN_PASSWORD=${SARI_ADMIN_PASSWORD:-}
+      - SARI_TOKEN_EXPIRE_MINUTES=${SARI_TOKEN_EXPIRE_MINUTES:-60}
       - CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
       - MQTT_BROKER_HOST=sari-mqtt
       - MQTT_BROKER_PORT=1883
-      - MQTT_USER=sari_operator
-      - MQTT_PASSWORD=sari_secure_password_2026
+      - MQTT_USER=${MQTT_USER:?set MQTT_USER in .env}
+      - MQTT_PASSWORD=${MQTT_PASSWORD:?set MQTT_PASSWORD in .env}
       - TZ=America/Mexico_City
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_ALLOWED_CHAT_IDS=${TELEGRAM_ALLOWED_CHAT_IDS:-}
@@ -88,7 +89,7 @@ services:
     container_name: sari_postgres
     environment:
       POSTGRES_USER: sari_user
-      POSTGRES_PASSWORD: sari_password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: sari_db
     ports:
       - "5433:5432"

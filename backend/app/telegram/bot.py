@@ -19,7 +19,7 @@ logger = logging.getLogger("sari_telegram")
 _telegram_polling_active = False
 _telegram_thread: Optional[threading.Thread] = None
 
-SECURITY_PIN = os.environ.get("SARI_SECURITY_PIN", "1234")
+from ..security import pin_matches
 
 
 def fetch_node_snapshot(node_id: str, stream_url: Optional[str], db) -> Optional[str]:
@@ -96,7 +96,7 @@ def handle_telegram_command(text: str, from_chat_id: Any) -> str:
             "Centro de Comando Táctico Móvil activo y enlazado.\n\n"
             "*Comandos Rápidos Disponibles:*\n"
             "• `/status` - Consulta el estado del perímetro, nodos y hardware.\n"
-            "• `/sirena [PIN]` - Activa la sirena táctica (Requiere PIN `1234`).\n"
+            "• `/sirena [PIN]` - Activa la sirena táctica (Requiere PIN de seguridad).\n"
             "• `/silenciar` - Silencia y apaga la sirena táctica.\n"
             "• `/portones [PIN]` - Bloquea/abre los accesos perimetrales.\n"
             "• `/fotos` o `/foto all` - Envía capturas de todos los módulos Ojos.\n" \
@@ -131,11 +131,11 @@ def handle_telegram_command(text: str, from_chat_id: Any) -> str:
     if cmd == "/sirena":
         parts = text.split()
         pin = parts[1] if len(parts) > 1 else ""
-        if pin == SECURITY_PIN:
+        if pin_matches(pin):
             execute_physical_tool("activate_siren", {"duration_seconds": 30})
             return "🚨 *SIRENA TÁCTICA ACTIVADA* por 30 segundos mediante orden de Telegram."
         else:
-            return "⚠️ *PIN inválido o ausente.*\nPara activar la sirena física, ingresa el PIN de seguridad:\n`/sirena 1234`"
+            return "⚠️ *PIN inválido o ausente.*\nPara activar la sirena física, ingresa el PIN de seguridad:\n`/sirena <PIN>`"
 
     if cmd in ["/silenciar", "/apagar_sirena"]:
         execute_physical_tool("deactivate_siren", {})
@@ -144,7 +144,7 @@ def handle_telegram_command(text: str, from_chat_id: Any) -> str:
     if cmd == "/portones":
         parts = text.split()
         pin = parts[1] if len(parts) > 1 else ""
-        if pin == SECURITY_PIN:
+        if pin_matches(pin):
             if HardwareState.gates_locked:
                 execute_physical_tool("unlock_gates", {})
                 return "🔓 *Accesos perimetrales desbloqueados* por orden de Telegram."
@@ -152,7 +152,7 @@ def handle_telegram_command(text: str, from_chat_id: Any) -> str:
                 execute_physical_tool("lock_gates", {})
                 return "🔒 *Accesos perimetrales bloqueados* de emergencia por orden de Telegram."
         else:
-            return "⚠️ *PIN inválido o ausente.*\nUso: `/portones 1234`"
+            return "⚠️ *PIN inválido o ausente.*\nUso: `/portones <PIN>`"
 
     if cmd in ["/foto", "/fotos", "/snapshot", "/captura", "/capturas"]:
         target_arg = parts[1].strip() if len(parts) > 1 else ""
@@ -281,11 +281,11 @@ def process_natural_language_query(query: str, chat_id: str) -> str:
 
         q_lower = query.lower()
         if any(w in q_lower for w in ["activa la sirena", "activar sirena", "enciende la alarma", "prende la alarma"]):
-            if SECURITY_PIN in query:
+            if any(pin_matches(tok) for tok in query.split()):
                 execute_physical_tool("activate_siren", {"duration_seconds": 30})
                 reply = "🚨 Entendido. Sirena táctica perimetral activada por 30 segundos."
             else:
-                reply = "⚠️ Para activar la sirena física por seguridad debes incluir tu PIN (ej: 'activa la sirena 1234' o `/sirena 1234`)."
+                reply = "⚠️ Para activar la sirena física por seguridad debes incluir tu PIN (ej: 'activa la sirena <PIN>' o `/sirena <PIN>`)."
             crud.add_message(db, thread.id, role="agent", content=reply)
             return reply
 

@@ -7,7 +7,7 @@ import os
 BROKER_HOST = os.environ.get("MQTT_BROKER_HOST", "sari-mqtt")
 BROKER_PORT = 1883
 BROKER_USER = "sari_operator"
-BROKER_PASS = "sari_secure_password_2026"
+BROKER_PASS = os.environ["MQTT_PASSWORD"]
 
 def test_mqtt_telemetry_publish_and_receive():
     received = []
@@ -79,7 +79,7 @@ def test_backend_hardware_state_updates_from_mqtt():
     # 1. Login to get access token
     login_req = urllib.request.Request(
         "http://127.0.0.1:7000/api/auth/login",
-        data=json.dumps({"username": "admin", "password": "sari_password"}).encode(),
+        data=json.dumps({"username": "admin", "password": os.environ["SARI_ADMIN_PASSWORD"]}).encode(),
         headers={"Content-Type": "application/json"}
     )
     with urllib.request.urlopen(login_req, timeout=3.0) as login_resp:

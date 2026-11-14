@@ -1,12 +1,15 @@
-import os
+import hmac
 from typing import Optional
 
 from fastapi import HTTPException
 
-SECRET_KEY = os.environ.get("SARI_SECRET_KEY", "SARI_SUPER_SECRET_KEY")
+from .config import get_settings
+
+_settings = get_settings()
+
+SECRET_KEY = _settings.secret_key
 ALGORITHM = "HS256"
-SECURITY_PIN = os.environ.get("SARI_SECURITY_PIN", "1234")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("SARI_TOKEN_EXPIRE_MINUTES", "720"))
+ACCESS_TOKEN_EXPIRE_MINUTES = _settings.token_expire_minutes
 
 
 def is_admin(user: dict) -> bool:
@@ -17,6 +20,12 @@ def has_perm(user: dict, flag: str) -> bool:
     return is_admin(user) or bool(user.get(flag))
 
 
+def pin_matches(pin: Optional[str]) -> bool:
+    if not pin:
+        return False
+    return hmac.compare_digest(str(pin).encode(), get_settings().security_pin.encode())
+
+
 def require_pin(pin: Optional[str]) -> None:
-    if pin != SECURITY_PIN:
+    if not pin_matches(pin):
         raise HTTPException(status_code=401, detail="PIN de seguridad inválido")

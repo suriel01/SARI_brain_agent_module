@@ -29,7 +29,7 @@ NODE_IP = os.environ.get("JETSON_NODE_IP", "192.168.1.73")
 MQTT_BROKER_HOST = os.environ.get("MQTT_BROKER_HOST", "192.168.1.71")
 MQTT_BROKER_PORT = int(os.environ.get("MQTT_BROKER_PORT", 1883))
 MQTT_USER = os.environ.get("MQTT_USER", "sari_operator")
-MQTT_PASS = os.environ.get("MQTT_PASSWORD", "sari_secure_password_2026")
+MQTT_PASS = os.environ.get("MQTT_PASSWORD", "")
 
 CEREBRO_HTTP_URLS = [
     f"http://{MQTT_BROKER_HOST}:7000/api/telemetry/node",
