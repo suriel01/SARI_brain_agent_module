@@ -12,23 +12,27 @@ from .routers import auth, chat, hardware, users, alerts, eyes
 
 from sqlalchemy import text
 
-# Habilitar extensión pgvector ANTES de crear tablas
-with engine.connect() as conn:
-    conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-    conn.commit()
 
-# Crear tablas
-models.Base.metadata.create_all(bind=engine)
+def init_db() -> None:
+    """Create extensions, tables and legacy column patches. Postgres-only statements are skipped elsewhere."""
+    is_postgres = engine.dialect.name == "postgresql"
+    if is_postgres:
+        with engine.connect() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+            conn.commit()
 
-# Auto-migration de columnas para la tabla users DESPUES de crear tablas
-with engine.connect() as conn:
-    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_create_chats BOOLEAN DEFAULT FALSE;"))
-    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_delete_chats BOOLEAN DEFAULT FALSE;"))
-    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_rename_chats BOOLEAN DEFAULT FALSE;"))
-    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_control_hardware BOOLEAN DEFAULT FALSE;"))
-    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_manage_users BOOLEAN DEFAULT FALSE;"))
-    conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS snapshot TEXT;"))
-    conn.commit()
+    models.Base.metadata.create_all(bind=engine)
+
+    if is_postgres:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_create_chats BOOLEAN DEFAULT FALSE;"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_delete_chats BOOLEAN DEFAULT FALSE;"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_rename_chats BOOLEAN DEFAULT FALSE;"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_control_hardware BOOLEAN DEFAULT FALSE;"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS can_manage_users BOOLEAN DEFAULT FALSE;"))
+            conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS snapshot TEXT;"))
+            conn.commit()
+
 
 app = FastAPI(title="SARI Brain Agent Backend")
 
@@ -57,6 +61,7 @@ else:
 # Seed Admin User y Hilo Inicial
 @app.on_event("startup")
 def startup_event():
+    init_db()
     db = SessionLocal()
     try:
         admin = crud.get_user_by_username(db, "admin")
