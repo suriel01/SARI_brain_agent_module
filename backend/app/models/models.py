@@ -121,3 +121,14 @@ class OperationalLog(Base):
     message = Column(Text, nullable=False)
     level = Column(String(20), nullable=False)
     camera_module = Column(String(100), nullable=False)
+
+
+class RateLimitRow(Base):
+    """Login/PIN failure counters shared by every process (``key`` is ``<scope>:<key>``)."""
+
+    __tablename__ = "rate_limit"
+
+    key = Column(String(255), primary_key=True)
+    failures = Column(JSON, nullable=False)
+    locked_until = Column(Float, nullable=True)
+
