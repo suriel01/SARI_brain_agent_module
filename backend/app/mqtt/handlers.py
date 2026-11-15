@@ -8,7 +8,7 @@ from ..database import SessionLocal
 from ..adapters.composition import state
 from ..domain.state import NODE_TELEMETRY_FIELDS
 from ..application.alert_ingest import ingest_alert, normalize_snapshot
-from ..telegram.watchdog import reset_node_connection_state, trigger_node_disconnection_alert
+from ..telegram.watchdog import note_heartbeat, reset_node_connection_state, trigger_node_disconnection_alert
 
 logger = logging.getLogger("sari_mqtt")
 
@@ -26,7 +26,7 @@ def handle_telemetry_message(topic: str, payload_str: str):
             logger.warning(f"[MQTT] Ignoring {topic}: payload node_id does not match the topic node")
             return
         node_id = topic_node
-        
+        note_heartbeat(node_id)  # in memory first: the watchdog must not see sabotage during a store outage
         state.put_node(node_id, {
             "node_id": node_id,
             "name": data.get("name", f"Jetson Node ({node_id})"),

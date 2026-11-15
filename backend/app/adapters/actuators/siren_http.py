@@ -39,3 +39,12 @@ class HttpSiren:
 
     def deactivate(self) -> tuple:
         return call_siren_service("/api/alarma/desactivar", None)
+
+    def health(self) -> bool:
+        """True when the siren service answers its health check (supervision heartbeat)."""
+        try:
+            res = requests.get(f"{SIRENA_SERVICE_URL}/health", timeout=2.0)
+            return res.status_code == 200 and res.json().get("status") == "ok"
+        except Exception as exc:
+            logger.warning("Siren service health check failed: %s", exc)
+            return False
