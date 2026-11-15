@@ -32,7 +32,13 @@ logger = logging.getLogger("sari_alarm")
 
 SYSTEM_ACTOR = Actor.system("alarm")
 DISARM_SILENCES = (AlarmState.PENDING, AlarmState.TRIGGERED)
+DISARM_TOOL = "alarm_disarm"
 IGNORED_EVENT_INTERVAL_SECONDS = 60.0  # one "detection_ignored" timeline row per node per minute
+
+
+def arm_tool(mode: ArmMode) -> str:
+    """Audit name of an arm request."""
+    return f"alarm_arm_{mode.value}"
 
 
 class AlarmService:
@@ -64,39 +70,56 @@ class AlarmService:
         return self.repo.timeline(limit)
 
     # -- human mode changes --------------------------------------------------------------------
+    def check_permission(self, actor: Optional[Actor], tool: str) -> Optional[dict]:
+        """None when ``actor`` may change the alarm mode; otherwise the audited denial. Channels call this
+        before checking the PIN, so an account without permission learns nothing about the PIN."""
+        if actor is not None and actor.may_change_alarm_mode():
+            return None
+        self.audit.record(actor, tool, "denied", "alarm mode change not authorized")
+        return {"status": "denied", "message": "⛔ Permission denied: alarm control not authorized."}
+
+    def reject_pin(self, actor: Actor, tool: str, detail: str) -> None:
+        """Audits a mode change refused for a wrong (or rate-limited) PIN."""
+        self.audit.record(actor, tool, "denied", detail)
+
     def arm(self, actor: Optional[Actor], mode_name: str, *, force: bool = False) -> dict:
         try:
             mode = ArmMode.parse(mode_name)
         except InvalidTransition as exc:
             return {"status": "invalid_mode", "message": str(exc)}
-        tool = f"alarm_arm_{mode.value}"
-        if actor is None or not actor.may_change_alarm_mode():
-            self.audit.record(actor, tool, "denied", "alarm mode change not authorized")
-            return {"status": "denied", "message": "⛔ Permission denied: alarm control not authorized."}
+        tool = arm_tool(mode)
+        denied = self.check_permission(actor, tool)
+        if denied:
+            return denied
         now = self.clock()
-        faults = self.repo.active_faults()
-        if faults and not force:
-            devices = ", ".join(f["device_id"] for f in faults)
-            self._safe_event("failed_to_arm", at=now, actor=actor.name, cause=f"active faults: {devices}"[:200])
-            self.audit.record(actor, tool, "failed", f"failed_to_arm: active faults ({devices})")
-            return {"status": "failed_to_arm", "message": f"Active faults: {devices}. Fix them or force arming.",
-                    "faults": faults}
         try:
+            faults = self.repo.active_faults()
+            if faults and not force:
+                devices = ", ".join(f["device_id"] for f in faults)
+                self._safe_event("failed_to_arm", at=now, actor=actor.name, cause=f"active faults: {devices}"[:200])
+                self.audit.record(actor, tool, "failed", f"failed_to_arm: active faults ({devices})")
+                return {"status": "failed_to_arm", "message": f"Active faults: {devices}. Fix them or force arming.",
+                        "faults": faults}
             _, after = self.repo.update(lambda s: arm(s, mode, now, self.config), actor=actor.name)
         except InvalidTransition as exc:
             self.audit.record(actor, tool, "failed", str(exc))
             return {"status": "invalid_transition", "message": str(exc)}
+        except Exception as exc:  # noqa: BLE001 - the store is down: refuse, audited, never a silent 500
+            return self._store_failed(actor, tool, exc)
         detail = "forced with active faults" if faults else ""
         self.audit.record(actor, tool, "success", detail)
         return {"status": "success", "alarm": self._announce(after, now)}
 
     def disarm(self, actor: Optional[Actor]) -> dict:
-        if actor is None or not actor.may_change_alarm_mode():
-            self.audit.record(actor, "alarm_disarm", "denied", "alarm mode change not authorized")
-            return {"status": "denied", "message": "⛔ Permission denied: alarm control not authorized."}
+        denied = self.check_permission(actor, DISARM_TOOL)
+        if denied:
+            return denied
         now = self.clock()
-        before, after = self.repo.update(lambda s: disarm(s, now), actor=actor.name)
-        self.audit.record(actor, "alarm_disarm", "success", f"from {before.state.value}")
+        try:
+            before, after = self.repo.update(lambda s: disarm(s, now), actor=actor.name)
+        except Exception as exc:  # noqa: BLE001 - the store is down: refuse, audited, never a silent 500
+            return self._store_failed(actor, DISARM_TOOL, exc)
+        self.audit.record(actor, DISARM_TOOL, "success", f"from {before.state.value}")
         siren_result = None
         if before.state in DISARM_SILENCES:
             siren_result = self._drive("desactivar_sirena", {}, actor)
@@ -110,7 +133,11 @@ class AlarmService:
         decided = {}
 
         def change(status: AlarmStatus) -> AlarmStatus:
-            decided["outcome"], after = evaluate(status, detection, now, self.config)
+            # Apply an elapsed timer first, so a stalled worker never leaves the alarm stuck in arming/pending.
+            current = advance(status, now, self.config)
+            decided["outcome"], after = evaluate(current, detection, now, self.config)
+            if status.state is AlarmState.PENDING and current.state is AlarmState.TRIGGERED:
+                decided["outcome"] = Outcome.RAISE  # the entry delay ran out: this pass owes the siren
             return after
 
         before, after = self.repo.update(change, actor=f"node:{detection.source}")
@@ -150,6 +177,11 @@ class AlarmService:
         except Exception:  # noqa: BLE001 - the dashboard notification is best effort
             logger.warning("Could not broadcast the alarm state")
         return described
+
+    def _store_failed(self, actor: Actor, tool: str, exc: Exception) -> dict:
+        logger.error("Alarm store unavailable during %s: %s", tool, exc)
+        self.audit.record(actor, tool, "failed", "alarm store unavailable")
+        return {"status": "failed", "message": "Alarm state unavailable; nothing was changed. Try again."}
 
     def _drive(self, tool: str, args: dict, actor: Actor) -> dict:
         """Physical action through the choke point; an adapter crash becomes a failed result, never a 500

@@ -92,10 +92,19 @@ def test_arm_away_runs_the_exit_delay(client, admin_headers, clock):
     assert body["remaining_seconds"] == 60
 
 
-def test_wrong_pin_changes_nothing(client, admin_headers):
+def test_wrong_pin_changes_nothing_and_is_audited(client, admin_headers):
     assert disarm(client, admin_headers, pin="0000").status_code == 401
+    assert arm(client, admin_headers, "home", pin="0000").status_code == 401
     assert client.get("/api/alarm", headers=admin_headers).json()["state"] == "armed_away"
-    assert audit_rows() == []
+    assert audit_rows() == [("admin_u", "rest", "alarm_disarm", "denied"), ("admin_u", "rest", "alarm_arm_home", "denied")]
+
+
+def test_user_without_permission_cannot_probe_the_pin(client, monitor_headers):
+    assert disarm(client, monitor_headers, pin="0000").status_code == 403
+    assert disarm(client, monitor_headers, pin=PIN).status_code == 403
+    assert arm(client, monitor_headers, "home", pin="0000").status_code == 403
+    assert arm(client, monitor_headers, "home", pin=PIN).status_code == 403
+    assert [r[3] for r in audit_rows()] == ["denied"] * 4
 
 
 def test_user_without_hardware_permission_is_denied_and_audited(client, monitor_headers):
@@ -307,3 +316,38 @@ def test_ignored_detections_are_recorded_once_per_minute_per_node(client, admin_
     client.post("/api/alerts/event", json=ALERT, headers=KEY)
     kinds = [r["kind"] for r in client.get("/api/alarm/timeline", headers=admin_headers).json()]
     assert kinds.count("detection_ignored") == 2
+
+
+# -- verifier follow-ups ---------------------------------------------------------------------------
+def test_alert_applies_an_elapsed_exit_delay_without_the_worker(client, admin_headers, siren, clock):
+    disarm(client, admin_headers)
+    arm(client, admin_headers, "away")  # exit delay ends at 1_060 and no worker tick runs
+    siren.calls.clear()
+    clock["t"] = 1_061.0
+    assert client.post("/api/alerts/event", json=ALERT, headers=KEY).json()["siren_result"]["status"] == "success"
+    assert client.get("/api/alarm", headers=admin_headers).json()["state"] == "triggered"
+
+
+def test_alert_after_an_elapsed_entry_delay_sounds_without_the_worker(client, admin_headers, siren, clock, monkeypatch):
+    from app.adapters import composition
+
+    monkeypatch.setattr(composition.alarm, "config", AlarmConfig(
+        modes={m: ModeConfig(exit_delay=0, entry_delay=20) for m in ArmMode},
+        zones={"perimeter": ZoneConfig(modes=frozenset(ArmMode), immediate=False)},
+        trigger_time=30,
+    ))
+    client.post("/api/alerts/event", json=ALERT, headers=KEY)  # pending until 1_020
+    clock["t"] = 1_025.0
+    weak = client.post("/api/alerts/event", json={**ALERT, "confidence": 0.3}, headers=KEY).json()
+    assert weak["siren_result"]["status"] == "success"
+    assert client.get("/api/alarm", headers=admin_headers).json()["state"] == "triggered"
+
+
+def test_disarm_with_the_store_down_is_audited(client, admin_headers, monkeypatch):
+    from app.adapters import composition
+
+    monkeypatch.setattr(composition.alarm.repo, "update", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("down")))
+    res = disarm(client, admin_headers)
+    assert res.status_code == 503
+    assert res.json()["detail"]["status"] == "failed"
+    assert audit_rows()[-1] == ("admin_u", "rest", "alarm_disarm", "failed")
