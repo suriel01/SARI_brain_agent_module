@@ -30,10 +30,14 @@ Branch: `feat/alarm-state-machine` (stacked on `feat/hexagonal-core`). Delivery:
 |---|---|---|---|---|
 | B1 | S1, S2, S3 | inline | done (38 tests RED→GREEN) | see git log |
 | B2 | S4, S6, S7 | inline | done (21 tests RED→GREEN, suite 477 passed) | see git log |
-| B3 | S5 | inline or writer (parallel with B4) | pending | |
-| B4 | S4, S5, S6 (UI) | writer (parallel with B3) | pending | |
+| B3 | S5 | inline (parallel with B4) | done (15 tests RED→GREEN) | see git log |
+| B4 | S4, S5, S6 (UI) | writer (parallel with B3) | done (lint/tsc/build; no UI test runner, not browser-checked) | see git log |
 
 ## Log
 
 - L1 (2026-11-14) user: "Sí, sigue con B" — continue with Phase B of the approved SARI v2 plan (`Phase B — Alarm state machine + supervision`).
 - L2 design: alarm state is one row (`alarm_state`) changed under a row lock by API and worker; timeline in `alarm_event`; active faults in `alarm_fault`. The worker scheduler advances timers (exit delay end, entry delay → triggered, triggered → armed) and sounds the siren for an entry-delay expiry as a `system` actor that may only raise the siren.
+- L3 RDD B1+B2 (`base b742b89`, lineage review-d8341848d23626f8, lenses risk/resilience/reliability): approved and acknowledged. Ten non-blocking advisories; fixed with RED tests: disarm survives a crashing siren adapter, an entry-delay siren that fails is retried while triggered, tamper sounds through the store-down fallback, re-arming while armed never opens an exit-delay window, `detection_ignored` rows limited to one per node per minute. Left as informational: any logged-in user may read the alarm status (dashboard monitors need it); invalid modes are rejected without an audit row.
+- L4 B3: supervision supervises registered nodes (15 s) and the siren service `/health` (probe every 10 s, 15 s timeout). Faults go to `alarm_fault`, the timeline and the WebSocket (`alarm_fault`); Telegram only for non-node devices, because node loss already sends the watchdog's sabotage alert. The watchdog keeps an in-memory copy of node liveness (MQTT telemetry notes it before the store write), so it alerts during a store outage and does not mistake live nodes for sabotage; a reachable store stays authoritative.
+- L5 B4: `AlarmPanel.tsx` in the Control tab (writer). Checks: `npm run lint` 0 errors (16 warnings, same as baseline), `npx tsc -b` ok, `npm run build` ok. Not exercised in a browser against a running backend.
+- L6 Suite: `pytest tests/unit` 498 passed, 3 skipped; ruff clean.
