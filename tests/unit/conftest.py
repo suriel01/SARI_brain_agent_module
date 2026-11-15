@@ -33,13 +33,11 @@ def app():
 def clean_state(app, monkeypatch):
     from app.database import engine
     from app.models import models
-    from app.routers import hardware
 
+    # Live state (actuators, counters, nodes, operational log) lives in these tables too, so this
+    # resets it along with every other table.
     models.Base.metadata.drop_all(bind=engine)
     models.Base.metadata.create_all(bind=engine)
-    hardware.HardwareState.siren_active = False
-    hardware.HardwareState.gates_locked = False
-    hardware.HardwareState.alert_count = 0
     from app import ratelimit
 
     ratelimit.reset_all()

@@ -63,6 +63,15 @@ def load_settings() -> Settings:
     )
 
 
+def run_background() -> bool:
+    """True when this process must run MQTT, Telegram polling, the watchdog and the scheduler.
+
+    Only `python -m app.worker` (or single-process development) sets SARI_RUN_BACKGROUND=true;
+    API workers leave it unset so background work never runs twice.
+    """
+    return _flag("SARI_RUN_BACKGROUND", default=False)
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return load_settings()

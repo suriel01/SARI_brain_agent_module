@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-from .config import ConfigError, KNOWN_INSECURE_VALUES, get_settings
+from .config import ConfigError, KNOWN_INSECURE_VALUES, get_settings, run_background
 from .database import engine, SessionLocal
 
 # Fail closed: refuse to start without the required security settings.
@@ -144,44 +144,57 @@ def seed_initial_data() -> None:
         db.close()
 
 
+STARTUP_LOCK_ID = 0x5A410001  # pg advisory lock: one process at a time migrates and seeds
+
+
+def bootstrap_database() -> None:
+    """Migrates and seeds the database. On PostgreSQL every API worker and the background worker
+    run this under one advisory lock, so concurrent starts never race on the schema or the seed."""
+    if engine.dialect.name != "postgresql":
+        init_db()
+        seed_initial_data()
+        return
+    with engine.connect() as lock_conn:
+        lock_conn.execute(text("SELECT pg_advisory_lock(:k)"), {"k": STARTUP_LOCK_ID})
+        try:
+            init_db()
+            seed_initial_data()
+        finally:
+            lock_conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": STARTUP_LOCK_ID})
+            lock_conn.commit()
+
+
 @app.on_event("startup")
 def startup_event():
-    init_db()
-    seed_initial_data()
-    # Logged only after the schema step and the seed queries actually succeeded (S15).
-    hardware.HardwareState.add_log("🔐 Database reachable; schema at the latest migration.", level="INFO", camera_module="SYS_CORE")
+    bootstrap_database()
+    # Background work (MQTT, Telegram, watchdog, scheduler) belongs to `python -m app.worker`.
+    # SARI_RUN_BACKGROUND=true runs it inside this process too, for single-process development only.
+    if run_background():
+        from .worker import log_boot, start_background_services
+        log_boot()
+        start_background_services()
 
-    # Iniciar cliente MQTT en segundo plano
-    try:
-        from .mqtt.client import start_mqtt_client
-        start_mqtt_client()
-    except Exception as e:
-        print(f"[MQTT] Error starting background client: {e}")
 
-    # Iniciar bot y watchdog de Telegram en segundo plano
-    try:
-        from .telegram.bot import start_telegram_bot
-        from .telegram.watchdog import start_watchdog
-        start_telegram_bot()
-        start_watchdog()
-    except Exception as e:
-        print(f"[Telegram] Error starting bot/watchdog: {e}")
+@app.on_event("startup")
+async def start_realtime_listener():
+    # One LISTEN connection per API worker fans PostgreSQL NOTIFY events out to this worker's sockets.
+    import asyncio
+
+    from .adapters.realtime.ws_broadcast import start_listener
+    start_listener(asyncio.get_running_loop())
+
+
+@app.on_event("shutdown")
+async def stop_realtime_listener():
+    from .adapters.realtime.ws_broadcast import stop_listener
+    stop_listener()
+
 
 @app.on_event("shutdown")
 def shutdown_event():
-    try:
-        from .mqtt.client import stop_mqtt_client
-        stop_mqtt_client()
-    except Exception as e:
-        print(f"[MQTT] Error stopping background client: {e}")
-
-    try:
-        from .telegram.bot import stop_telegram_bot
-        from .telegram.watchdog import stop_watchdog
-        stop_telegram_bot()
-        stop_watchdog()
-    except Exception as e:
-        print(f"[Telegram] Error stopping bot/watchdog: {e}")
+    if run_background():
+        from .worker import stop_background_services
+        stop_background_services()
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(auth.router, prefix="/api", tags=["auth"])

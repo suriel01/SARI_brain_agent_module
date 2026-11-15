@@ -4,6 +4,7 @@ from typing import Optional
 from fastapi import HTTPException
 
 from .config import get_settings
+from .domain.actors import has_permission
 from .ratelimit import RateLimited, pin_limiter
 
 _settings = get_settings()
@@ -18,7 +19,8 @@ def is_admin(user: dict) -> bool:
 
 
 def has_perm(user: dict, flag: str) -> bool:
-    return is_admin(user) or bool(user.get(flag))
+    """HTTP-side name for the domain permission rule (admins hold every permission)."""
+    return has_permission(user, flag)
 
 
 def pin_matches(pin: Optional[str]) -> bool:

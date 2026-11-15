@@ -11,7 +11,8 @@ from ..database import get_db
 from ..crud import crud
 from ..schemas import schemas
 from .deps import get_current_user
-from .hardware import Actor, execute_physical_tool, HardwareState
+from .hardware import Actor, execute_physical_tool
+from ..adapters.composition import state
 from ..security import has_perm, require_pin
 
 router = APIRouter()
@@ -67,8 +68,9 @@ def _node_rows(db: Session, lang: str) -> str:
     now = time.time()
     registered = {e.node_id: e for e in db.query(crud.models.EyeNode).all()}
     rows = []
-    for node_id in sorted(set(HardwareState.nodes) | set(registered)):
-        live = HardwareState.nodes.get(node_id, {})
+    live_nodes = state.list_nodes()
+    for node_id in sorted(set(live_nodes) | set(registered)):
+        live = live_nodes.get(node_id, {})
         eye = registered.get(node_id)
         last_seen = live.get("last_seen") or 0.0
         online = bool(live) and live.get("is_online") is not False and (now - last_seen) < NODE_ONLINE_WINDOW_S
@@ -89,6 +91,7 @@ def _status_report(db: Session, current_user: dict, lang: str) -> str:
     can_hw = has_perm(current_user, "can_control_hardware")
     recent = db.query(crud.models.EventLog).order_by(crud.models.EventLog.timestamp.desc()).limit(5).all()
     nodes_md = _node_rows(db, lang)
+    actuators = state.actuators()
     event_rows = [
         f"| `{ev.id}` | `{ev.timestamp.strftime('%H:%M:%S') if ev.timestamp else '-'}` | `{ev.module_name}` | {ev.event_description} | "
         f"`{f'{int(ev.confidence * 100)}%' if ev.confidence is not None else '-'}` |"
@@ -96,8 +99,8 @@ def _status_report(db: Session, current_user: dict, lang: str) -> str:
     ]
 
     if lang == "en":
-        siren_status = "🔴 **ACTIVATED (ALERT)**" if HardwareState.siren_active else "🟢 **DEACTIVATED (NORMAL)**"
-        gates_status = "🔒 **LOCKED**" if HardwareState.gates_locked else "🔓 **UNLOCKED**"
+        siren_status = "🔴 **ACTIVATED (ALERT)**" if actuators.siren_active else "🟢 **DEACTIVATED (NORMAL)**"
+        gates_status = "🔒 **LOCKED**" if actuators.gates_locked else "🔓 **UNLOCKED**"
         badge = "👑 **ADMINISTRATOR**" if user_role == "admin" else f"🛡️ **MONITOR (Access Level {current_user.get('clearance_level', 1)})**"
         events_md = "\n".join(event_rows) or "| - | - | - | No intrusions logged | - |"
         return f"""# 🛡️ SARI SOC TACTICAL STATUS REPORT
@@ -130,12 +133,12 @@ def _status_report(db: Session, current_user: dict, lang: str) -> str:
 ---
 
 ### 🔒 4. Threat Assessment & RBAC Clearance
-- **Threat Level:** {"🔴 CRITICAL ALERT" if HardwareState.siren_active else "🟢 NORMAL"}
+- **Threat Level:** {"🔴 CRITICAL ALERT" if actuators.siren_active else "🟢 NORMAL"}
 - **Access Scope:** {"Authorized for manual alarm dispatch and gate control." if can_hw else "⚠️ Read-only Mode: Limited authorization according to RBAC policy."}
 """
 
-    siren_status = "🔴 **ACTIVADA (ALERTA)**" if HardwareState.siren_active else "🟢 **DESACTIVADA (NORMAL)**"
-    gates_status = "🔒 **BLOQUEADOS**" if HardwareState.gates_locked else "🔓 **DESBLOQUEADOS**"
+    siren_status = "🔴 **ACTIVADA (ALERTA)**" if actuators.siren_active else "🟢 **DESACTIVADA (NORMAL)**"
+    gates_status = "🔒 **BLOQUEADOS**" if actuators.gates_locked else "🔓 **DESBLOQUEADOS**"
     badge = "👑 **ADMINISTRADOR**" if user_role == "admin" else f"🛡️ **MONITOR (Nivel de Acceso {current_user.get('clearance_level', 1)})**"
     events_md = "\n".join(event_rows) or "| - | - | - | Sin intrusiones registradas | - |"
     return f"""# 🛡️ REPORTE TÁCTICO DE ESTATUS SARI SOC
@@ -168,7 +171,7 @@ def _status_report(db: Session, current_user: dict, lang: str) -> str:
 ---
 
 ### 🔒 4. Evaluación de Seguridad & RBAC
-- **Nivel de Amenaza:** {"🔴 ALERTA CRÍTICA" if HardwareState.siren_active else "🟢 NORMAL"}
+- **Nivel de Amenaza:** {"🔴 ALERTA CRÍTICA" if actuators.siren_active else "🟢 NORMAL"}
 - **Acceso a Funciones:** {"Autorizado para disparo manual de alarma y control de portones." if can_hw else "⚠️ Modo Lectura: Autorización limitada según política RBAC."}
 """
 
@@ -197,7 +200,7 @@ async def chat_endpoint(req: schemas.ChatRequest, db: Session = Depends(get_db),
 
     # Save user message
     crud.add_message(db, thread_id, role="user", content=req.message)
-    HardwareState.add_log(f"💬 User [{current_user.get('username') or 'Operator'}]: {req.message[:50]}", level="INFO", camera_module="CHAT_USER")
+    state.add_log(f"💬 User [{current_user.get('username') or 'Operator'}]: {req.message[:50]}", level="INFO", camera_module="CHAT_USER")
     msg_lower = req.message.lower()
     chat_actor = Actor.from_user(current_user, "chat")
 
@@ -291,9 +294,9 @@ async def chat_endpoint(req: schemas.ChatRequest, db: Session = Depends(get_db),
         "eventos", "detectado", "alertas", "historial", "recientemente", 
         "recent events", "qué pasó", "que paso", "what happened", "events", "alerts"
     ]):
-        HardwareState.purge_expired_logs()
+        state.purge_expired_logs()
         recent_event_logs = db.query(crud.models.EventLog).order_by(crud.models.EventLog.timestamp.desc()).limit(5).all()
-        hardware_logs = HardwareState.logs[:5]
+        hardware_logs = state.list_logs(limit=5)
         
         if lang == "en":
             lines = ["🔍 **SARI Security Events & Alert Summary:**\n"]
@@ -377,7 +380,7 @@ async def chat_endpoint(req: schemas.ChatRequest, db: Session = Depends(get_db),
             )
 
     msg_db = crud.add_message(db, thread_id, role="agent", content=llm_text)
-    HardwareState.add_log(f"🤖 Agent responded in Chat Thread #{thread_id} ({lang.upper()})", level="INFO", camera_module="CHAT_AGENT")
+    state.add_log(f"🤖 Agent responded in Chat Thread #{thread_id} ({lang.upper()})", level="INFO", camera_module="CHAT_AGENT")
     return msg_db
 
 @router.get("/threads", response_model=List[schemas.ChatThreadResponse])
@@ -390,7 +393,7 @@ def create_thread_endpoint(req: schemas.ChatThreadCreate, db: Session = Depends(
         raise HTTPException(status_code=403, detail="Permission denied: Clearance required to create chat threads.")
     require_pin(req.pin, key=f"user:{current_user.get('id')}")
     new_th = crud.create_thread(db, user_id=current_user.get("id"), title=req.title)
-    HardwareState.add_log(f"➕ New chat thread created: '{req.title}'", level="INFO", camera_module="CHAT_MGMT")
+    state.add_log(f"➕ New chat thread created: '{req.title}'", level="INFO", camera_module="CHAT_MGMT")
     return new_th
 
 @router.put("/threads/{thread_id}", response_model=schemas.ChatThreadResponse)
@@ -401,7 +404,7 @@ def update_thread(thread_id: int, req: schemas.ChatThreadCreate, db: Session = D
     updated = crud.update_thread_title(db, thread_id, req.title)
     if not updated:
         raise HTTPException(status_code=404, detail="Chat not found")
-    HardwareState.add_log(f"✏️ Chat thread #{thread_id} renamed to '{req.title}'", level="INFO", camera_module="CHAT_MGMT")
+    state.add_log(f"✏️ Chat thread #{thread_id} renamed to '{req.title}'", level="INFO", camera_module="CHAT_MGMT")
     return updated
 
 @router.delete("/threads/{thread_id}")
@@ -412,7 +415,7 @@ def delete_thread(thread_id: int, pin: Optional[str] = None, db: Session = Depen
     deleted = crud.delete_thread(db, thread_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Thread not found")
-    HardwareState.add_log(f"🗑️ Chat thread #{thread_id} deleted by [{current_user.get('username')}]", level="WARN", camera_module="CHAT_MGMT")
+    state.add_log(f"🗑️ Chat thread #{thread_id} deleted by [{current_user.get('username')}]", level="WARN", camera_module="CHAT_MGMT")
     return {"status": "success", "message": "Thread deleted"}
 
 @router.get("/threads/{thread_id}/messages", response_model=List[schemas.ChatMessageResponse])

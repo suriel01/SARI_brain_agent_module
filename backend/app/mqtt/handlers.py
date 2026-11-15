@@ -5,8 +5,9 @@ from typing import Optional
 
 from ..config import get_settings
 from ..database import SessionLocal
-from ..routers.hardware import NODE_TELEMETRY_FIELDS, HardwareState
-from ..services.alert_ingest import ingest_alert, normalize_snapshot
+from ..adapters.composition import state
+from ..domain.state import NODE_TELEMETRY_FIELDS
+from ..application.alert_ingest import ingest_alert, normalize_snapshot
 from ..telegram.watchdog import reset_node_connection_state, trigger_node_disconnection_alert
 
 logger = logging.getLogger("sari_mqtt")
@@ -26,14 +27,14 @@ def handle_telemetry_message(topic: str, payload_str: str):
             return
         node_id = topic_node
         
-        HardwareState.nodes[node_id] = {
+        state.put_node(node_id, {
             "node_id": node_id,
             "name": data.get("name", f"Jetson Node ({node_id})"),
             "ip": data.get("ip"),
             **{field: data.get(field) for field in NODE_TELEMETRY_FIELDS},
             "last_seen": time.time(),
             "is_online": True
-        }
+        })
         reset_node_connection_state(node_id)
         logger.info(f"[MQTT] Telemetry updated for node {node_id}")
     except Exception as e:
@@ -56,28 +57,23 @@ def handle_status_message(topic: str, payload_str: str):
         status = str(data.get("status", "offline")).lower()
 
         if status == "online":
-            if node_id in HardwareState.nodes:
-                HardwareState.nodes[node_id]["is_online"] = True
-                HardwareState.nodes[node_id]["last_seen"] = time.time()
-                if "ip" in data:
-                    HardwareState.nodes[node_id]["ip"] = data["ip"]
-            else:
-                HardwareState.nodes[node_id] = {
+            seen = {"is_online": True, "last_seen": time.time()}
+            if "ip" in data:
+                seen["ip"] = data["ip"]
+            if not state.merge_node(node_id, seen):
+                state.merge_node(node_id, {
                     "node_id": node_id,
                     "name": f"Jetson Node ({node_id})",
                     "ip": data.get("ip"),
-                    "last_seen": time.time(),
-                    "is_online": True
-                }
+                    **seen,
+                }, create=True)
             reset_node_connection_state(node_id)
-            HardwareState.add_log(f"🟢 Jetson Node [{node_id}] connected via Wi-Fi (MQTT)", level="INFO", camera_module=node_id)
+            state.add_log(f"🟢 Jetson Node [{node_id}] connected via Wi-Fi (MQTT)", level="INFO", camera_module=node_id)
             logger.info(f"[MQTT] Node {node_id} status ONLINE")
         else:
             # LWT or explicit offline
-            if node_id in HardwareState.nodes:
-                HardwareState.nodes[node_id]["is_online"] = False
-                HardwareState.nodes[node_id]["last_seen"] = 0.0
-            HardwareState.add_log(f"⚠️ Jetson Node [{node_id}] disconnected (LWT signal)", level="WARNING", camera_module=node_id)
+            state.merge_node(node_id, {"is_online": False, "last_seen": 0.0})
+            state.add_log(f"⚠️ Jetson Node [{node_id}] disconnected (LWT signal)", level="WARNING", camera_module=node_id)
             trigger_node_disconnection_alert(node_id, reason="Señal LWT / Desconexión física recibida vía MQTT")
             logger.warning(f"[MQTT] Node {node_id} status OFFLINE (LWT)")
     except Exception as e:

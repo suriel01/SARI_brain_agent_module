@@ -11,13 +11,11 @@ from ..models import models
 from ..schemas import schemas
 from .deps import get_current_user, require_hardware_user
 from ..security import require_pin
-from .hardware import HardwareState
+from ..adapters.composition import state
 from ..netpolicy import validate_stream_url
 
 router = APIRouter()
 logger = logging.getLogger("sari_eyes")
-
-_tracking_states: Dict[str, bool] = {}
 
 @router.get("", response_model=List[schemas.EyeNodeResponse])
 @router.get("/", response_model=List[schemas.EyeNodeResponse])
@@ -25,9 +23,11 @@ def list_eyes(db: Session = Depends(get_db), current_user: dict = Depends(get_cu
     db_eyes = db.query(models.EyeNode).order_by(models.EyeNode.id.asc()).all()
     results = []
     now = time.time()
+    live_nodes = state.list_nodes()
+    tracking = state.tracking_overrides()
 
     for eye in db_eyes:
-        live_telemetry = HardwareState.nodes.get(eye.node_id, {})
+        live_telemetry = live_nodes.get(eye.node_id, {})
         last_seen = live_telemetry.get("last_seen", 0)
         is_online = bool(live_telemetry.get("is_online", True)) and ((now - last_seen) < 60.0)
 
@@ -48,7 +48,7 @@ def list_eyes(db: Session = Depends(get_db), current_user: dict = Depends(get_cu
             gpu_load_pct=live_telemetry.get("gpu_load_pct"),
             temp_c=live_telemetry.get("temp_c"),
             link_status=live_telemetry.get("link_status", None if is_online else "Desconectado"),
-            tracking_enabled=_tracking_states.get(eye.node_id, live_telemetry.get("tracking_enabled", True))
+            tracking_enabled=tracking.get(eye.node_id, live_telemetry.get("tracking_enabled", True))
         ))
     return results
 
@@ -71,7 +71,7 @@ def create_eye(eye_in: schemas.EyeNodeCreate, db: Session = Depends(get_db), cur
     db.commit()
     db.refresh(eye)
 
-    HardwareState.add_log(f"👁️ Nuevo Módulo Ojo registrado: [{eye.name}] ({eye.node_id})", level="INFO", camera_module=eye.node_id)
+    state.add_log(f"👁️ Nuevo Módulo Ojo registrado: [{eye.name}] ({eye.node_id})", level="INFO", camera_module=eye.node_id)
     return schemas.EyeNodeResponse(
         id=eye.id,
         node_id=eye.node_id,
@@ -107,11 +107,9 @@ def update_eye(node_id: str, eye_up: schemas.EyeNodeUpdate, db: Session = Depend
     db.commit()
     db.refresh(eye)
 
-    if eye.node_id in HardwareState.nodes:
-        HardwareState.nodes[eye.node_id]["name"] = eye.name
-        HardwareState.nodes[eye.node_id]["ip"] = eye.ip
+    state.merge_node(eye.node_id, {"name": eye.name, "ip": eye.ip})
 
-    HardwareState.add_log(
+    state.add_log(
         f"⚙️ Configuración actualizada para Ojo [{eye.node_id}]: Umbral YOLO {int((eye.yolo_threshold or 0.7)*100)}%, IP {eye.ip}",
         level="INFO",
         camera_module=eye.node_id
@@ -132,7 +130,7 @@ def update_eye(node_id: str, eye_up: schemas.EyeNodeUpdate, db: Session = Depend
     except Exception as ex:
         print(f"[MQTT] Error publishing eye config update: {ex}")
 
-    live_telemetry = HardwareState.nodes.get(eye.node_id, {})
+    live_telemetry = state.get_node(eye.node_id) or {}
     now = time.time()
     last_seen = live_telemetry.get("last_seen", 0)
     is_online = bool(live_telemetry.get("is_online", True)) and ((now - last_seen) < 60.0)
@@ -164,7 +162,7 @@ def delete_eye(node_id: str, db: Session = Depends(get_db), current_user: dict =
 
     db.delete(eye)
     db.commit()
-    HardwareState.add_log(f"🗑️ Módulo Ojo eliminado: [{node_id}]", level="WARN", camera_module=node_id)
+    state.add_log(f"🗑️ Módulo Ojo eliminado: [{node_id}]", level="WARN", camera_module=node_id)
     return {"status": "success", "message": f"Nodo Ojo {node_id} eliminado"}
 
 @router.post("/test-connection")
@@ -237,12 +235,10 @@ class PTZPayload(BaseModel):
 
 @router.post("/{node_id}/tracking")
 def set_eye_tracking(node_id: str, payload: TrackingPayload, current_user: dict = Depends(require_hardware_user)):
-    _tracking_states[node_id] = payload.enabled
-    if node_id not in HardwareState.nodes:
-        HardwareState.nodes[node_id] = {}
-    HardwareState.nodes[node_id]["tracking_enabled"] = payload.enabled
+    state.set_tracking_enabled(node_id, payload.enabled)
+    state.merge_node(node_id, {"tracking_enabled": payload.enabled}, create=True)
     
-    HardwareState.add_log(
+    state.add_log(
         f"🎯 Seguimiento automático de humanos {'ACTIVADO' if payload.enabled else 'DESACTIVADO'} para [{node_id}]",
         level="INFO",
         camera_module=node_id

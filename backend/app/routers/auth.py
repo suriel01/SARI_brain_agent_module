@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 import jwt
@@ -46,7 +47,10 @@ def login(req: schemas.LoginRequest, request: Request, db: Session = Depends(get
     }
     access_token = jwt.encode(token_data, SECRET_KEY, algorithm=ALGORITHM)
     
-    from .hardware import HardwareState
-    HardwareState.add_log(f"🔑 User [{user.username}] ({user.role.upper()}) logged in successfully", level="INFO", camera_module="AUTH_SYS")
+    from ..adapters.composition import state
+    try:
+        state.add_log(f"🔑 User [{user.username}] ({user.role.upper()}) logged in successfully", level="INFO", camera_module="AUTH_SYS")
+    except Exception:  # noqa: BLE001 - an operational log failure must not block a valid login
+        logging.getLogger("sari_auth").exception("Could not record the login in the operational log")
 
     return {"access_token": access_token, "token_type": "bearer", "role": user.role, **perms}

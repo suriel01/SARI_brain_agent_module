@@ -77,13 +77,13 @@ def test_telegram_button_is_audited(siren):
 
 
 def test_audit_db_failure_does_not_block_the_alarm(monkeypatch, siren):
-    from app.routers import hardware
+    from app.adapters.persistence import audit_sql
 
     class _Broken:
         def __call__(self):
             raise RuntimeError("db down")
 
-    monkeypatch.setattr(hardware, "SessionLocal", _Broken())
+    monkeypatch.setattr(audit_sql, "SessionLocal", _Broken())
     res = execute_physical_tool("activate_siren", {}, actor=Actor("admin_u", "rest", True))
     assert res["status"] == "success"
     assert HardwareState.siren_active is True

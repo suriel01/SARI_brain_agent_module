@@ -19,31 +19,55 @@ services:
       - ./backend/app:/app/app
       - ./backend/migrations:/app/migrations
       - ./tests:/app/tests
+    environment: &backend-env
+      PORT: "7000"
+      OLLAMA_URL: "http://host.docker.internal:11434/api/chat"
+      OLLAMA_MODEL: "qwen2.5:7b"
+      SIRENA_SERVICE_URL: "http://sari-sirena:5000"
+      SARI_SIREN_TOKEN: "${SARI_SIREN_TOKEN:?set SARI_SIREN_TOKEN in .env}"
+      SARI_NODE_KEYS: "${SARI_NODE_KEYS:-}"
+      DATABASE_URL: "postgresql+psycopg2://sari_user:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres_db:5432/sari_db"
+      OPENAI_API_BASE: "http://host.docker.internal:11434/v1"
+      OPENAI_BASE_URL: "http://host.docker.internal:11434/v1"
+      OPENAI_API_KEY: "ollama"
+      SARI_SECRET_KEY: "${SARI_SECRET_KEY:?set SARI_SECRET_KEY in .env}"
+      SARI_SECURITY_PIN: "${SARI_SECURITY_PIN:?set SARI_SECURITY_PIN in .env}"
+      SARI_ADMIN_PASSWORD: "${SARI_ADMIN_PASSWORD:-}"
+      SARI_TOKEN_EXPIRE_MINUTES: "${SARI_TOKEN_EXPIRE_MINUTES:-60}"
+      CORS_ORIGINS: "http://localhost:5173,http://127.0.0.1:5173"
+      MQTT_BROKER_HOST: "sari-mqtt"
+      MQTT_BROKER_PORT: "1883"
+      MQTT_USER: "${MQTT_USER:?set MQTT_USER in .env}"
+      MQTT_PASSWORD: "${MQTT_PASSWORD:?set MQTT_PASSWORD in .env}"
+      SARI_MQTT_LEGACY_ALERTS: "${SARI_MQTT_LEGACY_ALERTS:-true}"
+      TZ: "America/Mexico_City"
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
+      TELEGRAM_ALLOWED_CHAT_IDS: "${TELEGRAM_ALLOWED_CHAT_IDS:-}"
+      TELEGRAM_POLLING_ENABLED: "${TELEGRAM_POLLING_ENABLED:-true}"
+      SARI_RUN_BACKGROUND: "false"  # API workers never consume MQTT or poll Telegram
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+      sari-mqtt:
+        condition: service_started
+    restart: unless-stopped
+
+  # Background worker: the only consumer of MQTT alerts and Telegram updates; runs the anti-tamper
+  # watchdog and the maintenance scheduler (siren auto-off, ghost-node pruning). Same image and env.
+  sari-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: sari-worker
+    command: ["python", "-m", "app.worker"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/migrations:/app/migrations
     environment:
-      - PORT=7000
-      - OLLAMA_URL=http://host.docker.internal:11434/api/chat
-      - OLLAMA_MODEL=qwen2.5:7b
-      - SIRENA_SERVICE_URL=http://sari-sirena:5000
-      - SARI_SIREN_TOKEN=${SARI_SIREN_TOKEN:?set SARI_SIREN_TOKEN in .env}
-      - SARI_NODE_KEYS=${SARI_NODE_KEYS:-}
-      - DATABASE_URL=postgresql+psycopg2://sari_user:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres_db:5432/sari_db
-      - OPENAI_API_BASE=http://host.docker.internal:11434/v1
-      - OPENAI_BASE_URL=http://host.docker.internal:11434/v1
-      - OPENAI_API_KEY=ollama
-      - SARI_SECRET_KEY=${SARI_SECRET_KEY:?set SARI_SECRET_KEY in .env}
-      - SARI_SECURITY_PIN=${SARI_SECURITY_PIN:?set SARI_SECURITY_PIN in .env}
-      - SARI_ADMIN_PASSWORD=${SARI_ADMIN_PASSWORD:-}
-      - SARI_TOKEN_EXPIRE_MINUTES=${SARI_TOKEN_EXPIRE_MINUTES:-60}
-      - CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
-      - MQTT_BROKER_HOST=sari-mqtt
-      - MQTT_BROKER_PORT=1883
-      - MQTT_USER=${MQTT_USER:?set MQTT_USER in .env}
-      - MQTT_PASSWORD=${MQTT_PASSWORD:?set MQTT_PASSWORD in .env}
-      - SARI_MQTT_LEGACY_ALERTS=${SARI_MQTT_LEGACY_ALERTS:-true}
-      - TZ=America/Mexico_City
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
-      - TELEGRAM_ALLOWED_CHAT_IDS=${TELEGRAM_ALLOWED_CHAT_IDS:-}
-      - TELEGRAM_POLLING_ENABLED=${TELEGRAM_POLLING_ENABLED:-true}
+      <<: *backend-env
+      SARI_RUN_BACKGROUND: "true"
     depends_on:
       postgres_db:
         condition: service_healthy

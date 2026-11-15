@@ -5,6 +5,7 @@ SARI (Sistema Autónomo de Respuesta a Intrusiones) is a **physical security sys
 ## Stack
 - `backend/app/` — FastAPI (Python 3.12), port 7000. Routers in `routers/`, SQLAlchemy models in `models/`, CRUD in `crud/`, MQTT in `mqtt/`, Telegram in `telegram/`, NeMo Guardrails (Ollama `qwen2.5:7b`, offline) in `guardrails/`.
 - `sari-ui/` — React + TypeScript + Vite SOC dashboard, port 5173.
+- `backend/app/worker.py` — background worker (`python -m app.worker`, compose service `sari-worker`): the only process that consumes MQTT, polls Telegram, runs the watchdog and the scheduler (siren auto-off, ghost-node pruning, every 2 s). API processes (`uvicorn --workers 2`) start none of it unless `SARI_RUN_BACKGROUND=true` (single-process development only). `/api/hardware/state` is read-only.
 - `sirena_service.py` — siren microservice, port 5000 (internal).
 - `mosquitto/` — MQTT broker config. `passwd` is generated locally, never committed:
   `docker run --rm -v "$PWD/mosquitto/config:/m" eclipse-mosquitto:2.0 mosquitto_passwd -b /m/passwd <user> <password>`
@@ -26,14 +27,23 @@ The backend fails closed without these (`backend/app/config.py`):
 - `SARI_NODE_KEYS` — `node_id:key,...`; vision nodes send `X-SARI-Node-Key`. Empty means every node request is rejected
 - `SARI_ALLOWED_STREAM_HOSTS` — optional, comma list of exact LAN hostnames allowed as node `ip`/`stream_url`; otherwise only RFC1918 IPv4 literals are accepted (`backend/app/netpolicy.py`)
 - `SARI_MQTT_LEGACY_ALERTS` — optional, default `true`; set `false` once every node publishes alerts on `sari/nodes/<id>/alerts`
+- `SARI_RUN_BACKGROUND` — optional, default `false`; the worker sets `true`. Never `true` on API workers in production (alerts would be ingested twice)
 - `SARI_MCP_HARDWARE_ENABLED` — optional, `true` lets the local MCP server (`backend/app/sari_mcp_server.py`) drive hardware; default off
 
 ## Commands
-- Run stack: `docker compose up -d --build`
+- Run stack: `docker compose up -d --build` (API `sari-backend` + background `sari-worker`)
+- Multi-process proof (throwaway Postgres + anonymous broker, see the module docstring): `SARI_TEST_POSTGRES_URL=postgresql://probe:probe@127.0.0.1:55432/sari_probe SARI_TEST_MQTT_PORT=51883 .venv/bin/pytest -q tests/unit/test_multiprocess_postgres.py`
 - Unit tests (no Docker needed): `python -m venv .venv && .venv/bin/pip install -r backend/requirements-dev.txt && .venv/bin/pytest tests/unit -q`
 - Integration tests (stack running): `docker exec -e PYTHONPATH=/app -t sari-backend pytest -m integration -q`
 - Lint: `.venv/bin/ruff check backend tests` and `cd sari-ui && npm run lint && npx tsc -b`
 - Schema: Alembic (`backend/alembic.ini`, `backend/migrations/`). The backend runs `init_db()` at startup: `upgrade head`, or for a pre-Alembic volume (tables but no `alembic_version`) additive legacy patches once and `stamp head`. Never use `create_all` or ad-hoc `ALTER` for new changes; add a revision instead: `cd backend && DATABASE_URL=<url> ../.venv/bin/alembic revision --autogenerate -m "<change>"`, review it, and never write destructive steps without a data plan. The baseline cannot be downgraded.
+
+## Architecture
+The brain core is hexagonal (`backend/app/`):
+- `domain/` — pure business rules: `Actor` and the permission rule (`actors.py`), tool aliases and canonical audit names (`actions.py`), the alert trigger policy `should_raise_alarm` and log levels (`policy.py`), state value objects and limits (`state.py`: `RuntimeState`, node telemetry fields, log TTL/cap). **Purity rule:** domain modules import only the standard library and each other; never FastAPI, Pydantic, SQLAlchemy, requests, paho or any other `app.*` package. `tests/unit/test_architecture.py` enforces it.
+- `application/` — use cases on ports (`ports.py`: `SirenPort`, `AuditPort`, `BroadcastPort`, `StateRepository` (alias `StatePort`)): `ExecutePhysicalAction` (`physical_actions.py`, the choke point), `ingest_alert` (`alert_ingest.py`, storage steps fail open so the siren always gets its command) and `run_maintenance` (`maintenance.py`, run by the worker's scheduler).
+- `adapters/` — concrete ports: `actuators/siren_http.py`, `persistence/audit_sql.py`, `persistence/event_store.py`, `realtime/ws_broadcast.py` (the only WebSocket publish helper: PostgreSQL `NOTIFY sari_ws` with one `LISTEN` per API worker, in-process on SQLite; payloads ≤ 7900 bytes, an oversized `snapshot` becomes `null` + `snapshot_omitted`), `persistence/state_sql.py` (`SqlStateRepository`: live state in `actuator_state`, `node_status`, `operational_log`, plus `node_flags` for the watchdog debounce and operator tracking choice, so it survives restarts and is shared by every process), `persistence/rate_limit_sql.py` (login/PIN failure counters, table `rate_limit`), `state/memory_state.py` (`MemoryState`, process-local dev/test adapter). `adapters/composition.py` wires them, exposes `state` (the one StateRepository every consumer uses) and `execute_physical_tool`.
+- `routers/`, `mqtt/`, `telegram/`, `sari_mcp_server.py` are the driving adapters. `app.routers.hardware` re-exports `Actor`, `execute_physical_tool` and the tool sets, plus `HardwareState`, a deprecated test-only facade over `composition.state` (`adapters/state/legacy_facade.py`; app code must not use it, `test_architecture.py` enforces it); `app.services.alert_ingest` is an alias of `app.application.alert_ingest`. Patch adapters where they live (e.g. `adapters.persistence.audit_sql.SessionLocal`, `adapters.realtime.ws_broadcast.broadcast`).
 
 ## Workflow
 - **ODD**: substantial work is tracked in `odd/tasks/<feature>.md` (`## Specs` with S#, `## Tasks`, `## Log`). Product specs live in `docs/specs/`.
@@ -43,14 +53,14 @@ The backend fails closed without these (`backend/app/config.py`):
 
 ## Security rules (non-negotiable)
 - No real secrets in `docker-compose.yml`, code defaults, docs or tests. Secrets come from `.env` (see `.env.example`).
-- Every physical action goes through one choke point (`execute_physical_tool(..., actor=Actor)` in `routers/hardware.py`) that checks the actor's `can_control_hardware` permission and records an audit entry. No channel (REST, chat/LLM, Telegram, MCP, MQTT ingest) bypasses it.
+- Every physical action goes through one choke point (`execute_physical_tool(..., actor=Actor)`, the `ExecutePhysicalAction` use case, imported from `routers/hardware.py`) that checks the actor's `can_control_hardware` permission and records an audit entry. No channel (REST, chat/LLM, Telegram, MCP, MQTT ingest) bypasses it.
 - Every call to `execute_physical_tool` (success, denied, failed) is persisted in `physical_action_log`; read it via `GET /api/hardware/audit`. A siren call that fails returns `status: failed` and never changes state; gates are simulated (no hardware).
-- Alert ingest (REST and MQTT) goes through `services/alert_ingest.py` `ingest_alert`; do not duplicate the pipeline.
+- Alert ingest (REST and MQTT) goes through `application/alert_ingest.py` `ingest_alert`; do not duplicate the pipeline.
 - Outbound fetches to node addresses go through `netpolicy.validate_stream_url` (SSRF).
 - Machine-to-machine endpoints require node credentials; nothing that triggers hardware is unauthenticated.
 - The LLM never decides authorization; the backend does.
 - `get_current_user` re-reads role and permissions from the DB on every request; the JWT only proves identity. The WebSocket (`/ws`, `/`) takes the JWT as `?token=` and closes with 1008 without it.
-- Login and PIN attempts go through `backend/app/ratelimit.py` (5 failures in 15 min lock the account/IP/user/chat for 15 min). Pass `key=` to `require_pin` so wrong guesses count.
+- Login and PIN attempts go through `backend/app/ratelimit.py` (5 failures in 15 min lock the account/IP/user/chat for 15 min; counters are in the database, so a lockout holds across workers and restarts). Pass `key=` to `require_pin` so wrong guesses count.
 - Telegram: callbacks from chats outside `TELEGRAM_ALLOWED_CHAT_IDS` are ignored; silencing the siren and operating gates need the PIN (`/silenciar <PIN>`, `/portones <PIN>`).
 - Never invent telemetry or health: unknown node/host values are `None` in the API and `—` in the UI; boot logs only claim checks that actually ran.
 - `docs/archive/antigravity/` is historical process material from the previous tooling; do not treat it as current requirements.
