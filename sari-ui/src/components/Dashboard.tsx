@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { LogOut, BellRing, Lock, PanelLeftOpen, PanelLeftClose, Sun, Moon } from 'lucide-react';
 import ChatPanel from './ChatPanel';
 import HardwarePanel from './HardwarePanel';
+import AlarmPanel from './AlarmPanel';
 import AdminPanel from './AdminPanel';
 import PinModal from './PinModal';
 import EyesModule from './EyesModule';
@@ -33,6 +34,8 @@ export default function Dashboard({ token, role, permissions, onLogout, isDarkMo
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<string>('');
   const [actionCallback, setActionCallback] = useState<((pin: string) => void) | null>(null);
+  // Bumped on realtime alarm events so the alarm panel refetches its status and timeline.
+  const [alarmTick, setAlarmTick] = useState(0);
 
   const fetchState = async () => {
     try {
@@ -59,6 +62,8 @@ export default function Dashboard({ token, role, permissions, onLogout, isDarkMo
         const data = JSON.parse(event.data);
         if (data.event === 'siren_activated' || data.event === 'siren_deactivated') {
           fetchState();
+        } else if (data.event === 'alarm_state' || data.event === 'alarm_fault') {
+          setAlarmTick((tick) => tick + 1);
         }
       } catch (e) {
         console.error("Error parsing WS message:", e);
@@ -327,17 +332,20 @@ export default function Dashboard({ token, role, permissions, onLogout, isDarkMo
               />
             </div>
           ) : activeTab === 'hardware' ? (
-            <HardwarePanel 
-              token={token} 
-              permissions={permissions} 
-              requestPin={requestPin} 
-              state={state} 
-              fetchState={fetchState} 
-              onNavigateToEye={(nodeId) => {
-                setSelectedEyeId(nodeId);
-                setActiveTab('perception');
-              }}
-            />
+            <div className="h-full overflow-y-auto">
+              <AlarmPanel token={token} permissions={permissions} requestPin={requestPin} realtimeTick={alarmTick} />
+              <HardwarePanel
+                token={token}
+                permissions={permissions}
+                requestPin={requestPin}
+                state={state}
+                fetchState={fetchState}
+                onNavigateToEye={(nodeId) => {
+                  setSelectedEyeId(nodeId);
+                  setActiveTab('perception');
+                }}
+              />
+            </div>
           ) : (
             <AdminPanel token={token} />
           )}

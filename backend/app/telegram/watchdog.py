@@ -2,7 +2,7 @@ import time
 import datetime
 import logging
 import threading
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from . import service as telegram_service
 from ..adapters.composition import state
@@ -13,6 +13,54 @@ logger = logging.getLogger("sari_watchdog")
 
 _watchdog_active = False
 _watchdog_thread: Optional[threading.Thread] = None
+
+HEARTBEAT_TIMEOUT_SECONDS = 15.0
+
+# Last known liveness per node, kept in this process so the watchdog still detects a silent node
+# (and does not mistake a live one for sabotage) while the state store is unavailable.
+_last_known: Dict[str, Dict[str, Any]] = {}
+_last_known_lock = threading.Lock()
+
+
+def note_heartbeat(node_id: str, at: Optional[float] = None) -> None:
+    """Records in memory that a node reported (called before any store write)."""
+    with _last_known_lock:
+        _last_known[node_id] = {"last_seen": time.time() if at is None else at, "is_online": True}
+
+
+def _remember(nodes: Dict[str, Dict[str, Any]]) -> None:
+    """A reachable store is authoritative (removed nodes are forgotten); a newer in-memory heartbeat wins."""
+    with _last_known_lock:
+        fresh = {}
+        for nid, node in nodes.items():
+            known = _last_known.get(nid)
+            last_seen = node.get("last_seen") or 0
+            if known is not None and known["last_seen"] > last_seen:
+                fresh[nid] = known
+            else:
+                fresh[nid] = {"last_seen": last_seen, "is_online": bool(node.get("is_online", False))}
+        _last_known.clear()
+        _last_known.update(fresh)
+
+
+def _nodes_to_check() -> Dict[str, Dict[str, Any]]:
+    """The store's view refreshed into memory; the memory copy alone when the store is down."""
+    try:
+        _remember(state.list_nodes())
+    except Exception as e:
+        logger.warning("[WATCHDOG] State store unavailable (%s); supervising from the in-memory copy.", e)
+    with _last_known_lock:
+        return {nid: dict(node) for nid, node in _last_known.items()}
+
+
+def _mark_offline(node_id: str) -> None:
+    with _last_known_lock:
+        if node_id in _last_known:
+            _last_known[node_id]["is_online"] = False
+    try:
+        state.merge_node(node_id, {"is_online": False})
+    except Exception as e:
+        logger.warning("[WATCHDOG] Could not mark %s offline in the store: %s", node_id, e)
 
 def reset_node_connection_state(node_id: str):
     """Resets the debouncing flag when a node sends telemetry and is active.
@@ -87,14 +135,12 @@ def _watchdog_worker():
     while _watchdog_active:
         try:
             now = time.time()
-            for nid, node in state.list_nodes().items():
-                last_seen = node.get("last_seen", 0)
-                is_online = node.get("is_online", False)
-
+            for nid, node in _nodes_to_check().items():
+                last_seen = node.get("last_seen") or 0
                 # If node was considered online but has been silent for >15s without LWT:
-                if is_online and (now - last_seen > 15.0):
+                if node.get("is_online") and (now - last_seen > HEARTBEAT_TIMEOUT_SECONDS):
                     logger.warning(f"[WATCHDOG] Heartbeat timeout for node {nid} ({now - last_seen:.1f}s silent).")
-                    state.merge_node(nid, {"is_online": False})
+                    _mark_offline(nid)
                     trigger_node_disconnection_alert(nid, reason="Pérdida de señal / Heartbeat timeout > 15s")
 
             time.sleep(4.0)

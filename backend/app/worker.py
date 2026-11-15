@@ -11,7 +11,7 @@ import threading
 import time
 from typing import Optional
 
-from .application.maintenance import SIREN_AUTO_OFF_SECONDS, run_maintenance
+from .application.maintenance import DEFAULT_REGISTERED_NODES, SIREN_AUTO_OFF_SECONDS, run_maintenance
 from .config import get_settings
 
 logger = logging.getLogger("sari_worker")
@@ -37,7 +37,23 @@ def maintenance_tick(now: Optional[float] = None):
     """One scheduler pass over the shared state."""
     from .adapters.composition import state
 
-    result = run_maintenance(state, registered_node_ids(), time.time() if now is None else now)
+    now = time.time() if now is None else now
+    registered = set(registered_node_ids()) or set(DEFAULT_REGISTERED_NODES)
+    result = run_maintenance(state, registered, now)
+    try:
+        from .adapters.composition import alarm
+
+        siren = alarm.tick(now)
+        if siren is not None:
+            logger.warning("[WORKER] Entry delay expired: siren %s", siren.get("status"))
+    except Exception:
+        logger.exception("[WORKER] Alarm timer pass failed")
+    try:
+        from .adapters.composition import supervisor
+
+        supervisor.run(registered, state.list_nodes(), now)
+    except Exception:
+        logger.exception("[WORKER] Supervision pass failed")
     if result.siren_expired:
         logger.info("[WORKER] Siren auto-off after %ss without alerts", SIREN_AUTO_OFF_SECONDS)
     if result.pruned_nodes:

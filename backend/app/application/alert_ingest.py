@@ -14,10 +14,11 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from ..adapters.composition import broadcaster, execute_physical_tool, state
+from ..adapters.composition import alarm, broadcaster, execute_physical_tool, state
 from ..adapters.persistence.event_store import save_event_and_embedding
 from ..crud import crud
 from ..domain.actors import Actor
+from ..domain.alarm import TAMPER_EVENT, Detection, Outcome
 from ..domain.policy import SIREN_CONFIDENCE_THRESHOLD, alert_log_level, should_raise_alarm
 from ..models import models
 from ..telegram.service import send_telegram_alert_photo
@@ -102,6 +103,16 @@ def _evidence_thread(db: Session, module: str) -> models.ChatThread:
     return thread
 
 
+def _alarm_decides_raise(node_id: str, event_type: str, confidence: float) -> bool:
+    """The alarm state machine decides by mode and zone. If its store is unavailable, fail toward safety:
+    the confidence threshold decides, as before the alarm modes existed."""
+    try:
+        return alarm.on_detection(Detection(event_type=event_type, confidence=confidence, source=node_id)) is Outcome.RAISE
+    except Exception as ex:
+        logger.error("Alert ingest: alarm state unavailable (%s); the confidence threshold decides", ex)
+        return event_type == TAMPER_EVENT or should_raise_alarm(event_type, confidence, SIREN_CONFIDENCE_THRESHOLD)
+
+
 def ingest_alert(
     db: Session,
     *,
@@ -154,7 +165,7 @@ def ingest_alert(
         logger.warning("Error delivering Telegram alert photo: %s", ex_tg)
 
     siren_result = None
-    if should_raise_alarm(event_type, confidence, SIREN_CONFIDENCE_THRESHOLD):
+    if _alarm_decides_raise(node_id, event_type, confidence):
         try:
             siren_result = execute_physical_tool("activar_sirena", {"duracion_segundos": 30}, actor=Actor.node(node_id))
         except Exception as ex:
