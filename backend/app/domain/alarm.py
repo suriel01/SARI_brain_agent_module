@@ -144,9 +144,13 @@ def _disarmed(now: float) -> AlarmStatus:
 
 
 def arm(status: AlarmStatus, mode: ArmMode, now: float, config: AlarmConfig) -> AlarmStatus:
-    """Arms from disarmed, arming or another armed mode; pending and triggered must be disarmed first."""
+    """Arms from disarmed or arming (exit delay), or switches armed modes at once; pending and triggered
+    must be disarmed first."""
     if status.state in (AlarmState.PENDING, AlarmState.TRIGGERED):
         raise InvalidTransition(f"cannot arm while {status.state.value}; disarm first")
+    if status.state in ARMED_STATES.values():
+        # Already protected: never open an unprotected exit-delay window.
+        return status if status.mode is mode else _armed(mode, now)
     exit_delay = config.modes[mode].exit_delay
     if exit_delay > 0:
         return AlarmStatus(state=AlarmState.ARMING, mode=mode, since=now, deadline=now + exit_delay)

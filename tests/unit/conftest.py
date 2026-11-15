@@ -39,8 +39,12 @@ def clean_state(app, monkeypatch):
     models.Base.metadata.drop_all(bind=engine)
     models.Base.metadata.create_all(bind=engine)
     from app import ratelimit
+    from app.adapters import composition
 
     ratelimit.reset_all()
+    # Process-local alarm memory (ignored-detection rate limit, owed entry-delay siren) per test.
+    monkeypatch.setattr(composition.alarm, "_ignored_logged", {})
+    monkeypatch.setattr(composition.alarm, "_siren_owed", False)
     yield
 
 

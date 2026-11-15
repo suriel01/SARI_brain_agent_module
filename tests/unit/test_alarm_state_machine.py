@@ -225,3 +225,12 @@ def test_status_round_trips_through_a_dict():
     pending = AlarmStatus(AlarmState.PENDING, ArmMode.HOME, since=10.0, deadline=30.0, cause="cam-door")
     assert AlarmStatus.from_dict(pending.to_dict()) == pending
     assert pending.to_dict() == {"state": "pending", "mode": "home", "since": 10.0, "deadline": 30.0, "cause": "cam-door"}
+
+
+# -- review follow-ups ---------------------------------------------------------------------------
+def test_rearming_the_same_mode_keeps_protection():
+    assert arm(AWAY, ArmMode.AWAY, 50.0, CONFIG) == AWAY
+
+
+def test_switching_from_armed_skips_the_exit_delay():
+    assert arm(HOME, ArmMode.AWAY, 50.0, CONFIG) == status(AlarmState.ARMED_AWAY, ArmMode.AWAY, since=50.0)

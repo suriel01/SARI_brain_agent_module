@@ -251,3 +251,59 @@ def test_weak_alert_never_sounds_even_with_the_store_down(client, siren, monkeyp
     res = client.post("/api/alerts/event", json={**ALERT, "confidence": 0.3}, headers=KEY)
     assert res.json()["siren_result"] is None
     assert siren.calls == []
+
+
+# -- review follow-ups ---------------------------------------------------------------------------
+def test_disarm_succeeds_when_the_siren_command_raises(client, admin_headers, siren, clock, monkeypatch):
+    from app.adapters import composition
+
+    client.post("/api/alerts/event", json=ALERT, headers=KEY)
+
+    def boom(*a, **k):
+        raise RuntimeError("siren adapter crashed")
+
+    monkeypatch.setattr(composition.alarm, "physical_action", boom)
+    res = disarm(client, admin_headers)
+    assert res.status_code == 200
+    assert res.json()["siren_result"]["status"] == "failed"
+    assert client.get("/api/alarm", headers=admin_headers).json()["state"] == "disarmed"
+
+
+def test_entry_delay_siren_is_retried_until_it_sounds(client, admin_headers, siren, clock, monkeypatch):
+    from app import worker
+    from app.adapters import composition
+
+    monkeypatch.setattr(composition.alarm, "config", AlarmConfig(
+        modes={m: ModeConfig(exit_delay=0, entry_delay=20) for m in ArmMode},
+        zones={"perimeter": ZoneConfig(modes=frozenset(ArmMode), immediate=False)},
+        trigger_time=30,
+    ))
+    client.post("/api/alerts/event", json=ALERT, headers=KEY)
+    siren.fail = True
+    worker.maintenance_tick(now=1_020.0)
+    assert client.get("/api/alarm", headers=admin_headers).json()["state"] == "triggered"
+    siren.fail = False
+    worker.maintenance_tick(now=1_022.0)
+    worker.maintenance_tick(now=1_024.0)
+    assert siren_paths(siren) == [ACTIVATE, ACTIVATE]
+    assert [r[3] for r in audit_rows() if r[0] == "system:alarm"] == ["failed", "success"]
+
+
+def test_tamper_sounds_even_with_the_alarm_store_down(client, admin_headers, siren, monkeypatch):
+    from app.adapters import composition
+
+    disarm(client, admin_headers)
+    monkeypatch.setattr(composition.alarm.repo, "update", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("down")))
+    res = client.post("/api/alerts/event", json={**ALERT, "event_type": "tamper", "confidence": 0.1}, headers=KEY)
+    assert res.json()["siren_result"]["status"] == "success"
+
+
+def test_ignored_detections_are_recorded_once_per_minute_per_node(client, admin_headers, clock):
+    disarm(client, admin_headers)
+    for t in (1_001.0, 1_010.0, 1_059.0):
+        clock["t"] = t
+        client.post("/api/alerts/event", json=ALERT, headers=KEY)
+    clock["t"] = 1_062.0
+    client.post("/api/alerts/event", json=ALERT, headers=KEY)
+    kinds = [r["kind"] for r in client.get("/api/alarm/timeline", headers=admin_headers).json()]
+    assert kinds.count("detection_ignored") == 2

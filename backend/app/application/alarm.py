@@ -32,6 +32,7 @@ logger = logging.getLogger("sari_alarm")
 
 SYSTEM_ACTOR = Actor.system("alarm")
 DISARM_SILENCES = (AlarmState.PENDING, AlarmState.TRIGGERED)
+IGNORED_EVENT_INTERVAL_SECONDS = 60.0  # one "detection_ignored" timeline row per node per minute
 
 
 class AlarmService:
@@ -44,6 +45,8 @@ class AlarmService:
         self.broadcast = broadcast
         self.config = config
         self.clock = clock
+        self._ignored_logged: dict = {}  # node -> last "detection_ignored" row (process-local)
+        self._siren_owed = False  # an entry-delay siren that failed; retried while triggered (worker only)
 
     # -- reading ------------------------------------------------------------------------------
     def status(self) -> AlarmStatus:
@@ -96,7 +99,7 @@ class AlarmService:
         self.audit.record(actor, "alarm_disarm", "success", f"from {before.state.value}")
         siren_result = None
         if before.state in DISARM_SILENCES:
-            siren_result = self.physical_action("desactivar_sirena", {}, actor=actor)
+            siren_result = self._drive("desactivar_sirena", {}, actor)
         return {"status": "success", "alarm": self._announce(after, now), "siren_result": siren_result}
 
     # -- detections and timers -----------------------------------------------------------------
@@ -113,7 +116,9 @@ class AlarmService:
         before, after = self.repo.update(change, actor=f"node:{detection.source}")
         outcome = decided["outcome"]
         if outcome is Outcome.RECORD_ONLY and should_raise_alarm(detection.event_type, detection.confidence,
-                                                                 self.config.threshold):
+                                                                 self.config.threshold) \
+                and now - self._ignored_logged.get(detection.source, float("-inf")) >= IGNORED_EVENT_INTERVAL_SECONDS:
+            self._ignored_logged[detection.source] = now
             self._safe_event("detection_ignored", at=now, actor=f"node:{detection.source}", cause=detection.source,
                              state=before.state.value)
         if after.state is not before.state:
@@ -121,20 +126,21 @@ class AlarmService:
         return outcome
 
     def tick(self, now: Optional[float] = None) -> Optional[dict]:
-        """Applies an elapsed timer. An entry delay that runs out sounds the siren as the system actor."""
+        """Applies an elapsed timer. An entry delay that runs out sounds the siren as the system actor; if that
+        siren command fails it is retried on every tick while the alarm stays triggered."""
         now = self.clock() if now is None else now
         before, after = self.repo.update(lambda s: advance(s, now, self.config), actor=SYSTEM_ACTOR.name)
-        if after.state is before.state:
-            return None
-        self._announce(after, now)
+        if after.state is not before.state:
+            self._announce(after, now)
         if before.state is AlarmState.PENDING and after.state is AlarmState.TRIGGERED:
-            try:
-                return self.physical_action("activar_sirena", {"duracion_segundos": DEFAULT_SIREN_SECONDS},
-                                            actor=SYSTEM_ACTOR)
-            except Exception as exc:  # noqa: BLE001 - reported to the caller, never swallowed silently
-                logger.exception("Entry delay expired but the siren command raised")
-                return {"status": "failed", "message": str(exc)}
-        return None
+            self._siren_owed = True
+        elif after.state is not AlarmState.TRIGGERED:
+            self._siren_owed = False
+        if not self._siren_owed:
+            return None
+        result = self._drive("activar_sirena", {"duracion_segundos": DEFAULT_SIREN_SECONDS}, SYSTEM_ACTOR)
+        self._siren_owed = result.get("status") != "success"
+        return result
 
     # -- helpers ---------------------------------------------------------------------------------
     def _announce(self, status: AlarmStatus, now: float) -> dict:
@@ -144,6 +150,15 @@ class AlarmService:
         except Exception:  # noqa: BLE001 - the dashboard notification is best effort
             logger.warning("Could not broadcast the alarm state")
         return described
+
+    def _drive(self, tool: str, args: dict, actor: Actor) -> dict:
+        """Physical action through the choke point; an adapter crash becomes a failed result, never a 500
+        after the alarm state already changed."""
+        try:
+            return self.physical_action(tool, args, actor=actor)
+        except Exception as exc:  # noqa: BLE001 - reported in the result
+            logger.exception("Physical action %s raised", tool)
+            return {"status": "failed", "message": str(exc)}
 
     def _safe_event(self, kind: str, **kwargs) -> None:
         try:
