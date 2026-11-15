@@ -52,7 +52,8 @@ def _authorize(current_user: dict, tool: str, pin: Optional[str]) -> Actor:
     try:
         require_pin(pin, key=f"user:{current_user.get('id')}")
     except HTTPException as exc:
-        alarm.reject_pin(actor, tool, f"invalid PIN (HTTP {exc.status_code})")
+        reason = "PIN attempts locked out" if exc.status_code == 429 else "invalid PIN"
+        alarm.reject_pin(actor, tool, f"{reason} (HTTP {exc.status_code})")
         raise
     return actor
 
